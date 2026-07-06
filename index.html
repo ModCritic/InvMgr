@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; connect-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1a1a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Room Inventory Manager</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1577,6 +1580,15 @@ setStatus(isTouch()
 
 // Attempt session recovery
 tryRecoverSnapshot();
+
+// Register service worker (needed for PWA installability; no caching/offline
+// behavior, see sw.js). Registration failing here is non-fatal -- the app
+// still works, it just won't be installable as a PWA until this succeeds.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {
+    setStatus('Service worker registration failed -- app still works, just not installable yet.');
+  });
+}
 </script>
 </body>
 </html>
