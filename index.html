@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; connect-src 'none';">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Room Inventory Manager</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: monospace; background: #1a1a1a; color: #ccc;
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100svh; /* svh = sized for worst-case visible area (address bar shown); avoids needing scroll on mobile. vh is the fallback for older browsers. */
+    overflow: hidden;
+  }
+
+  /* ══════════════════════════════════════
+     TOP BAR — desktop: always visible
+     touch: slides up/down, island stays
+  ══════════════════════════════════════ */
+  #top-wrap {
+    flex-shrink: 0; position: relative; z-index: 300;
+    background: #252525; border-bottom: 1px solid #444;
+  }
+
+  /* The collapsible part */
+  #top-bar {
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    flex-wrap: wrap; overflow: hidden;
+    transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+    max-height: 200px; /* large enough for wrapped content */
+    container-type: inline-size; /* lets touch-mode children size via cqi, see media query below */
+  }
+  #top-bar label { font-size: 13px; }
+  #top-bar input[type=number] {
+    width: 62px; background: #333; border: 1px solid #555; color: #ddd;
+    padding: 3px 5px; font-family: monospace; font-size: 13px;
+  }
+  #top-bar button {
+    background: #383838; border: 1px solid #555; color: #ccc; padding: 4px 10px;
+    font-family: monospace; font-size: 13px; cursor: pointer; touch-action: manipulation;
+  }
+  #top-bar button:hover { background: #484848; }
+  #set-room-btn { background: #3a4a3a; }
+  .row-break { display: none; } /* only becomes a line-break on touch, see media query below */
+
+  /* The always-visible island: add, undo, menu-toggle, fit */
+  #top-island {
+    display: flex; align-items: center; justify-content: center;
+    gap: clamp(4px, 2.5cqi, 8px);
+    padding: 5px 10px; background: #252525;
+    border-top: 1px solid #333;
+    container-type: inline-size; /* lets child buttons size via cqi (% of THIS element's width) */
+  }
+  /* On desktop the island is inside the bar visually — hide the separate island */
+  /* We achieve this by showing island only on coarse devices */
+  #top-island { display: none; }
+
+  /* Font-size (and padding, via em) fluidly scale with the island's own width,
+     floor = smallest still-legible/tappable size, ceiling = original fixed
+     design size (so widening past a typical phone width, e.g. landscape,
+     never grows buttons bigger than their original design — just stops
+     shrinking them). Each button group keeps the same size RATIO to the
+     base group across the whole range, preserving the original visual
+     hierarchy (Add bigger, Fit/Plan/Units smaller) at every width. */
+  #top-island button {
+    background: #383838; border: 1px solid #555; color: #ccc; cursor: pointer; touch-action: manipulation;
+    font-family: monospace; white-space: nowrap;
+    font-size: clamp(12px, 4.5cqi, 16px);
+    padding: 0.3em 0.6em;
+  }
+  #top-island button:hover { background: #484848; }
+  /* Prefixed with #top-island (not just the button's own id) so these reliably
+     out-specificity the shared "#top-island button" rule above — a bare
+     "#island-add { ... }" has the SAME id-count but one fewer type selector,
+     so it actually LOSES to "#top-island button" and silently never applied.
+     Verified this by computing specificity directly: #top-island button
+     resolves to (1,0,1); a bare #island-add resolves to only (1,0,0). */
+  #top-island button#island-add  { background: #2e3e4e; font-size: clamp(15px, 5.6cqi, 20px); }
+  #top-island button#island-undo { background: #4a3a2e; }
+  #top-island button#island-menu { background: #303838; }
+  #top-island button#island-fit  { background: #303030; font-size: clamp(10px, 3.6cqi, 13px); }
+  #top-island button#island-fit.active { background: #2a4a5a; border-color: #5af; color: #9df; }
+
+  /* Fit to screen button on desktop lives in top-bar */
+  #fit-btn { background: #303030; }
+  #fit-btn.active { background: #2a4a5a; border-color: #5af; color: #9df; }
+  #add-item-btn { background: #2e3e4e; font-size: 18px; padding: 2px 10px; }
+  #undo-btn { background: #4a3a2e; }
+
+  /* ── Touch overrides ── */
+  @media (pointer: coarse) {
+    #top-bar { gap: clamp(4px, 2.16cqi, 12px); padding: 10px 12px; justify-content: center; }
+    #top-bar.collapsed { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; pointer-events: none; }
+    /* W/L/H label+input sizing is responsive (font-size scales with the
+       row's own available width, capped at the original 15px design size)
+       so all three fit on one row across realistic phone widths instead of
+       wrapping mid-group. Calibrated by computing actual needed row width
+       at several container widths (320-412px+) rather than guessing. */
+    #top-bar label { font-size: clamp(9px, 3.6cqi, 15px); }
+    #top-bar input[type=number] { width: 4.5ch; font-size: clamp(9px, 3.6cqi, 15px); padding: 0.3em 0.3em; }
+    #top-bar button { font-size: 16px; padding: 8px 14px; }
+    /* Force W/L/H onto row 1, Set Room onto row 2, Save/Load onto row 3,
+       regardless of exact pixel widths — a zero-height full-width item
+       forces everything after it onto a new flex line. No effect on
+       desktop, where .row-break stays display:none (set outside this
+       touch-only block). */
+    .row-break { display: block; flex-basis: 100%; height: 0; }
+    #add-item-btn { font-size: 22px; padding: 6px 14px; }
+    /* Hide desktop add/undo from top-bar on touch; they live in the island */
+    #add-item-btn, #undo-btn, #fit-btn, #plan-btn, #units-btn { display: none; }
+    /* Show the island */
+    #top-island { display: flex; }
+    .modal-box { min-width: 300px; padding: 24px; }
+    .modal-box h2 { font-size: 17px; }
+    .modal-row label { font-size: 16px; }
+    .modal-row input[type=number], .modal-row input[type=text] { font-size: 16px; padding: 8px 8px; width: 110px; }
+    .modal-row input[type=text] { width: 180px; }
+    .modal-btns button { font-size: 16px; padding: 10px 20px; }
+    .list-entry { font-size: 15px; padding: 9px 10px; }
+    #list-panel h3 { font-size: 14px; padding: 8px 10px; }
+    #item-search { font-size: 16px; padding: 7px 8px; }
+    #item-search-clear { font-size: 16px; padding: 5px 10px; }
+    #status-bar { font-size: 13px; padding: 5px 12px; }
+  }
+
+  /* ══════════════════════════════════════
+     MAIN AREA
+  ══════════════════════════════════════ */
+  #main { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+  /* ══════════════════════════════════════
+     LEFT SLIDER DRAWER
+  ══════════════════════════════════════ */
+  #slider-drawer {
+    position: relative; z-index: 200;
+    width: 58px; background: #202020; border-right: 1px solid #444;
+    display: flex; flex-direction: column; align-items: center; padding: 6px 0;
+    flex-shrink: 0; transition: transform 0.22s ease; overflow: hidden;
+  }
+  @media (pointer: coarse) {
+    #slider-drawer {
+      position: absolute; top: 0; left: 0; bottom: 0;
+      transform: translateX(-100%);
+      box-shadow: 3px 0 12px rgba(0,0,0,0.6);
+    }
+    #slider-drawer.open { transform: translateX(0); }
+    #slider-toggle { display: flex !important; }
+  }
+  #slider-toggle {
+    display: none;
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    z-index: 210; background: #303030; border: 1px solid #555;
+    border-left: none; color: #aaa; font-size: 16px; padding: 10px 6px;
+    cursor: pointer; touch-action: manipulation; line-height: 1;
+    border-radius: 0 4px 4px 0; transition: left 0.22s ease;
+    /* default label: ► */
+  }
+  #slider-toggle.open { left: 58px; }
+  #slider-drawer label { font-size: 10px; color: #888; margin-bottom: 4px; }
+  #layer-slider-wrap { flex: 1; display: flex; flex-direction: row; align-items: stretch; width: 100%; }
+  #layer-ticks {
+    flex: 1; display: flex; flex-direction: column-reverse; justify-content: space-between;
+    padding: 0 2px; font-size: 9px; color: #777; position: relative;
+  }
+  .tick-label { text-align: right; white-space: nowrap; line-height: 1; padding-right: 2px; }
+  .tick-label.half { color: #444; font-size: 8px; }
+  .meter-label {
+    position: absolute; left: 0; right: 2px; text-align: right;
+    font-size: 9px; color: #7ab; white-space: nowrap; line-height: 1;
+    pointer-events: none; transform: translateY(50%);
+  }
+  #layer-slider {
+    writing-mode: vertical-lr; direction: rtl;
+    width: 22px; cursor: pointer; accent-color: #7ab; flex-shrink: 0;
+    margin: 0 2px; touch-action: none;
+  }
+
+  /* ══════════════════════════════════════
+     CANVAS
+  ══════════════════════════════════════ */
+  #canvas-wrap { flex: 1; overflow: auto; background: #181818; position: relative; }
+  /* Fit mode: canvas-wrap clips, canvas scales via transform-origin */
+  #canvas-wrap.fit-mode { overflow: hidden; display: flex; align-items: flex-start; justify-content: flex-start; }
+  #room-canvas { position: relative; flex-shrink: 0; margin: 20px; transform-origin: top left; }
+  #canvas-wrap.fit-mode #room-canvas { margin: 0; }
+  #room-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+
+  .room-item {
+    position: absolute; cursor: grab; border: 2px solid rgba(0,0,0,0.4);
+    user-select: none; -webkit-user-select: none; touch-action: none;
+  }
+  .room-item:active { cursor: grabbing; }
+  .room-item.selected { outline: 3px solid #fff; outline-offset: 1px; }
+
+  .hold-ring {
+    position: absolute; inset: -5px; border-radius: 0;
+    border: 3px solid transparent; pointer-events: none; z-index: 1; box-sizing: border-box;
+  }
+  .hold-ring.active { border-color: #e55; animation: holdGrow 1.5s linear forwards; }
+  @keyframes holdGrow { from { opacity: 0.2; } to { opacity: 1; } }
+
+  .item-tooltip {
+    position: fixed; background: #111; border: 1px solid #666; color: #ddd;
+    padding: 5px 10px; font-size: 12px; font-family: monospace; pointer-events: none;
+    z-index: 99999; white-space: nowrap; display: none; max-width: 90vw;
+  }
+  @media (pointer: coarse) { .item-tooltip { font-size: 14px; padding: 8px 12px; } }
+
+  /* ══════════════════════════════════════
+     RIGHT LIST PANEL
+  ══════════════════════════════════════ */
+  #list-panel {
+    width: 180px; background: #1e1e1e; border-left: 1px solid #444;
+    display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+    transition: transform 0.22s ease;
+  }
+  @media (pointer: coarse) {
+    #list-panel {
+      position: absolute; top: 0; right: 0; bottom: 0;
+      transform: translateX(100%);
+      box-shadow: -3px 0 12px rgba(0,0,0,0.6);
+      z-index: 200; width: 200px;
+    }
+    #list-panel.open { transform: translateX(0); }
+    #list-toggle { display: flex !important; }
+  }
+  #list-toggle {
+    display: none;
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    z-index: 210; background: #303030; border: 1px solid #555;
+    border-right: none; color: #aaa; font-size: 16px; padding: 10px 6px;
+    cursor: pointer; touch-action: manipulation; line-height: 1;
+    border-radius: 4px 0 0 4px; transition: right 0.22s ease;
+  }
+  #list-toggle.open { right: 200px; }
+  #list-panel h3 { font-size: 12px; padding: 6px 8px; border-bottom: 1px solid #444; color: #aaa; font-weight: normal; }
+  #list-search-wrap {
+    display: flex; align-items: center; gap: 4px; padding: 6px 8px;
+    border-bottom: 1px solid #333; flex-shrink: 0;
+  }
+  #item-search {
+    flex: 1; min-width: 0; background: #161616; border: 1px solid #444; color: #ddd;
+    padding: 4px 6px; font-family: monospace; font-size: 12px;
+  }
+  #item-search:focus { border-color: #6a8; outline: none; }
+  #item-search-clear {
+    background: #303030; border: 1px solid #555; color: #999; cursor: pointer;
+    font-family: monospace; font-size: 13px; padding: 2px 7px; line-height: 1.4;
+    touch-action: manipulation; flex-shrink: 0;
+  }
+  #item-search-clear:hover { background: #484848; color: #ccc; }
+  .list-empty-msg { padding: 10px 8px; font-size: 12px; color: #666; font-style: italic; }
+  #item-list { flex: 1; overflow-y: auto; }
+  .list-entry {
+    padding: 5px 8px; font-size: 12px; cursor: pointer; border-bottom: 1px solid #2a2a2a;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .list-entry:hover { background: #2a2a2a; }
+  .list-entry.selected { background: #2e3e4e; color: #fff; }
+  .list-entry.planned { opacity: 0.45; font-style: italic; }
+  .list-entry.planned:hover { background: #252525; }
+  .list-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Planning mode button — desktop top-bar */
+  #plan-btn { background: #303030; }
+  #plan-btn.active { background: #4a2e50; border-color: #b06dc8; color: #d9a0ee; }
+  /* Planning mode button — touch island */
+  #top-island button#island-plan { background: #303030; font-size: clamp(10px, 3.6cqi, 13px); }
+  #top-island button#island-plan.active { background: #4a2e50; border-color: #b06dc8; color: #d9a0ee; }
+
+  /* Units toggle button (Imperial/Metric) — light green when active */
+  #units-btn { background: #303030; }
+  #units-btn.active { background: #2e5a30; border-color: #6dc87a; color: #a0eeae; }
+  #top-island button#island-units { background: #303030; font-size: clamp(10px, 3.6cqi, 13px); }
+  #top-island button#island-units.active { background: #2e5a30; border-color: #6dc87a; color: #a0eeae; }
+
+  /* Items above the selected item dim out */
+  .room-item.dim-above { opacity: 0.5; transition: opacity 0.15s; }
+
+  /* ══════════════════════════════════════
+     DIALOGS
+  ══════════════════════════════════════ */
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.65); z-index: 10000; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-box {
+    background: #2a2a2a; border: 1px solid #555; padding: 20px; min-width: 260px; font-family: monospace;
+  }
+  .modal-box h2 { font-size: 14px; margin-bottom: 14px; color: #ddd; font-weight: normal; border-bottom: 1px solid #444; padding-bottom: 6px; }
+  .modal-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
+  .modal-row label { font-size: 13px; color: #bbb; }
+  .modal-row input[type=number], .modal-row input[type=text] {
+    width: 90px; background: #1a1a1a; border: 1px solid #555; color: #ddd;
+    padding: 4px 6px; font-family: monospace; font-size: 13px;
+  }
+  .modal-row input[type=text] { width: 160px; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+  .modal-btns button {
+    background: #383838; border: 1px solid #555; color: #ccc; padding: 5px 14px;
+    font-family: monospace; font-size: 13px; cursor: pointer; touch-action: manipulation;
+  }
+  .modal-btns button:hover { background: #484848; }
+  .modal-btns button.confirm { background: #2e4e3e; }
+  .modal-btns button.confirm:hover { background: #3e6e5e; }
+  .modal-btns button.danger { background: #5a2020; border-color: #833; }
+  .modal-btns button.danger:hover { background: #7a2a2a; }
+
+  #status-bar {
+    font-size: 11px; color: #666; padding: 3px 10px; background: #1a1a1a;
+    border-top: 1px solid #333; flex-shrink: 0;
+  }
+
+  /* shared backdrop for all drawers */
+  #drawer-backdrop {
+    display: none; position: absolute; inset: 0; z-index: 190; background: transparent;
+  }
+  #drawer-backdrop.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div id="top-wrap">
+  <!-- Collapsible menu section -->
+  <div id="top-bar">
+    <label><span id="room-w-label">W(ft):</span><input type="number" id="room-w" value="12" min="1" max="200" step="0.5"></label>
+    <label><span id="room-l-label">L(ft):</span><input type="number" id="room-l" value="10" min="1" max="200" step="0.5"></label>
+    <label><span id="room-h-label">H(ft):</span><input type="number" id="room-h" value="8"  min="1" max="50"  step="0.5"></label>
+    <div class="row-break"></div>
+    <button id="set-room-btn">Set Room</button>
+    <div class="row-break"></div>
+    <button id="save-btn">Save</button>
+    <button id="load-btn">Load</button>
+    <input type="file" id="file-input" accept=".json" style="display:none">
+    <!-- Desktop-only buttons (hidden on touch via CSS) -->
+    <button id="add-item-btn" title="Add Item">&#9632;</button>
+    <button id="undo-btn">Undo</button>
+    <button id="fit-btn" title="Fit to Screen">Fit</button>
+    <button id="plan-btn" title="Planning Mode">Plan</button>
+    <button id="units-btn" title="Toggle Metric Units">Units</button>
+  </div>
+  <!-- Always-visible island (touch only, shown via CSS) -->
+  <div id="top-island">
+    <button id="island-add" title="Add Item">&#9632;</button>
+    <button id="island-undo">Undo</button>
+    <button id="island-fit">Fit</button>
+    <button id="island-plan" title="Planning Mode">Plan</button>
+    <button id="island-units" title="Toggle Metric Units">Units</button>
+    <button id="island-menu" title="Menu">&#9660;</button>
+  </div>
+</div>
+
+<div id="main">
+  <!-- Layer slider toggle (touch: ►, open state shows ◄ via JS) -->
+  <button id="slider-toggle">&#9658;</button>
+  <!-- List panel toggle (touch: ◄, open state shows ► via JS) -->
+  <button id="list-toggle">&#9668;</button>
+  <!-- Shared backdrop for all drawers -->
+  <div id="drawer-backdrop"></div>
+
+  <!-- Left slider drawer -->
+  <div id="slider-drawer">
+    <label>Layer</label>
+    <div id="layer-slider-wrap">
+      <div id="layer-ticks"></div>
+      <input type="range" id="layer-slider" min="0" max="100" value="100" step="1">
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="room-canvas"></div>
+  </div>
+
+  <!-- Right list panel (drawer on touch) -->
+  <div id="list-panel">
+    <h3>Items</h3>
+    <div id="list-search-wrap">
+      <input type="text" id="item-search" placeholder="Search: name, W20, L12, H8..." autocomplete="off">
+      <button id="item-search-clear" title="Clear search">&times;</button>
+    </div>
+    <div id="item-list"></div>
+  </div>
+</div>
+
+<div id="status-bar">Ready.</div>
+<div class="item-tooltip" id="tooltip"></div>
+
+<!-- Add Item Dialog -->
+<div class="modal-overlay" id="add-dialog" style="display:none">
+  <div class="modal-box">
+    <h2>Add Item</h2>
+    <div class="modal-row"><label>Name:</label><input type="text" id="new-name" placeholder="Leave blank for default"></div>
+    <div class="modal-row"><label id="new-w-label">Width (in):</label><input type="number" id="new-w" value="12" min="1" max="1000" step="0.001"></div>
+    <div class="modal-row"><label id="new-l-label">Length (in):</label><input type="number" id="new-l" value="12" min="1" max="1000" step="0.001"></div>
+    <div class="modal-row"><label id="new-h-label">Height (in):</label><input type="number" id="new-h" value="12" min="1" max="1000" step="0.001"></div>
+    <div class="modal-btns">
+      <button id="add-cancel">Cancel</button>
+      <button class="confirm" id="add-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Name / Delete Dialog -->
+<div class="modal-overlay" id="name-dialog" style="display:none">
+  <div class="modal-box" style="position:relative">
+    <button id="name-swap-btn" title="Swap Width and Length" style="position:absolute;top:12px;right:12px;background:#383838;border:1px solid #555;color:#ccc;font-family:monospace;font-size:13px;padding:2px 7px;cursor:pointer;touch-action:manipulation;" onmouseenter="this.style.background='#484848'" onmouseleave="this.style.background='#383838'">&#x21BB;</button>
+    <h2>Name Item</h2>
+    <div class="modal-row"><label>Name:</label><input type="text" id="name-input" placeholder="Leave blank for default"></div>
+    <div class="modal-btns">
+      <button class="danger" id="name-delete">Delete</button>
+      <button id="name-cancel">Cancel</button>
+      <button class="confirm" id="name-confirm">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// Constants
+// ════════════════════════════════════════════════════
+const PX_PER_INCH = 8;
+const PX_PER_FOOT = 96;
+// Exact international definitions — not approximations.
+const CM_PER_IN = 2.54;
+const M_PER_FT  = 0.3048;
+const PX_PER_METER = PX_PER_FOOT / M_PER_FT;
+
+// ════════════════════════════════════════════════════
+// State
+// ════════════════════════════════════════════════════
+let room             = { w: 12, l: 10, h: 8 };
+let items            = [];
+let itemCounter      = 0;
+let dragOrderCounter = 0;
+let selectedId       = null;
+let undoStack        = [];
+let layerFeet        = room.h;
+let fitMode          = false;
+let planMode         = false;
+let metricMode       = false;
+
+// ════════════════════════════════════════════════════
+// DOM refs
+// ════════════════════════════════════════════════════
+const canvas         = document.getElementById('room-canvas');
+const canvasWrap     = document.getElementById('canvas-wrap');
+const slider         = document.getElementById('layer-slider');
+const ticksEl        = document.getElementById('layer-ticks');
+const tooltip        = document.getElementById('tooltip');
+const itemListEl     = document.getElementById('item-list');
+const itemSearchEl      = document.getElementById('item-search');
+const itemSearchClearEl = document.getElementById('item-search-clear');
+const statusBar      = document.getElementById('status-bar');
+const sliderDrawer   = document.getElementById('slider-drawer');
+const sliderToggle   = document.getElementById('slider-toggle');
+const listPanel      = document.getElementById('list-panel');
+const listToggle     = document.getElementById('list-toggle');
+const drawerBackdrop = document.getElementById('drawer-backdrop');
+const topBar         = document.getElementById('top-bar');
+const islandMenu     = document.getElementById('island-menu');
+const roomWLabel     = document.getElementById('room-w-label');
+const roomLLabel     = document.getElementById('room-l-label');
+const roomHLabel     = document.getElementById('room-h-label');
+const newWLabel      = document.getElementById('new-w-label');
+const newLLabel      = document.getElementById('new-l-label');
+const newHLabel      = document.getElementById('new-h-label');
+
+// ════════════════════════════════════════════════════
+// Utilities
+// ════════════════════════════════════════════════════
+function randColor()   { return `hsl(${Math.floor(Math.random()*360)},55%,42%)`; }
+function inchesToPx(i) { return i * PX_PER_INCH; }
+function feetToPx(f)   { return f * PX_PER_FOOT; }
+function getItemName(item) { return item.name || `item #${item.serial}`; }
+const TOUCH_INSTRUCTIONS = 'Tap: tooltip. Double-tap: rename. Hold 1.5s: delete. Drag: move. ► layer  ◄ items  ▼ menu';
+let statusRevertTimer = null;
+function setStatus(m) {
+  statusBar.textContent = m;
+  if (statusRevertTimer) { clearTimeout(statusRevertTimer); statusRevertTimer = null; }
+  // On touch, any action-outcome message reverts back to the instructional
+  // text after 3s of no further status updates. Setting the instructional
+  // text itself doesn't re-arm the timer, so it doesn't loop pointlessly.
+  if (isTouch() && m !== TOUCH_INSTRUCTIONS) {
+    statusRevertTimer = setTimeout(() => {
+      statusBar.textContent = TOUCH_INSTRUCTIONS;
+      statusRevertTimer = null;
+    }, 3000);
+  }
+}
+function isTouch()     { return window.matchMedia('(pointer: coarse)').matches; }
+function inToCm(inch)  { return inch * CM_PER_IN; }
+function cmToIn(cm)    { return cm   / CM_PER_IN; }
+function ftToM(ft)     { return ft   * M_PER_FT; }
+function mToFt(m)      { return m    / M_PER_FT; }
+function round3(n)     { return Math.round(n * 1000) / 1000; }
+function round6(n)     { return Math.round(n * 1e6) / 1e6; }
+
+// ════════════════════════════════════════════════════
+// Drawer management — one shared backdrop, three drawers
+// ════════════════════════════════════════════════════
+let openDrawerEl = null; // track which drawer is open so backdrop can close it
+
+function openDrawer(drawerEl, toggleEl) {
+  // close whatever is open first
+  if (openDrawerEl && openDrawerEl !== drawerEl) closeAnyDrawer();
+  drawerEl.classList.add('open');
+  toggleEl.classList.add('open');
+  drawerBackdrop.classList.add('visible');
+  openDrawerEl = drawerEl;
+  // update toggle glyphs
+  if (drawerEl === sliderDrawer) { sliderToggle.textContent = '\u25C4'; } // ◄
+  if (drawerEl === listPanel)    { listToggle.textContent   = '\u25BA'; } // ►
+}
+
+function closeAnyDrawer() {
+  if (!openDrawerEl) return;
+  openDrawerEl.classList.remove('open');
+  // reset toggles
+  sliderToggle.classList.remove('open'); sliderToggle.textContent = '\u25BA'; // ►
+  listToggle.classList.remove('open');   listToggle.textContent   = '\u25C4'; // ◄
+  drawerBackdrop.classList.remove('visible');
+  openDrawerEl = null;
+}
+
+sliderToggle.addEventListener('click', () => {
+  sliderDrawer.classList.contains('open') ? closeAnyDrawer() : openDrawer(sliderDrawer, sliderToggle);
+});
+listToggle.addEventListener('click', () => {
+  listPanel.classList.contains('open') ? closeAnyDrawer() : openDrawer(listPanel, listToggle);
+});
+drawerBackdrop.addEventListener('click', closeAnyDrawer);
+
+// ════════════════════════════════════════════════════
+// Top bar collapse (touch ▼/▲ toggle)
+// ════════════════════════════════════════════════════
+let topBarOpen = true; // starts expanded (first render will set)
+
+function setTopBar(open) {
+  topBarOpen = open;
+  if (open) {
+    topBar.classList.remove('collapsed');
+    islandMenu.textContent = '\u25B2'; // ▲
+  } else {
+    topBar.classList.add('collapsed');
+    islandMenu.textContent = '\u25BC'; // ▼
+  }
+}
+
+// Only collapse on first touch load
+if (isTouch()) {
+  // start collapsed on mobile so the canvas gets full space
+  setTopBar(false);
+}
+
+islandMenu.addEventListener('click', () => setTopBar(!topBarOpen));
+
+// ════════════════════════════════════════════════════
+// Room canvas
+// ════════════════════════════════════════════════════
+function applyRoomSize() {
+  const wPx = feetToPx(room.w), lPx = feetToPx(room.l);
+  canvas.style.width  = wPx + 'px';
+  canvas.style.height = lPx + 'px';
+
+  // rebuild SVG background
+  let svg = document.getElementById('room-svg');
+  if (svg) svg.remove();
+  svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.id = 'room-svg';
+  svg.setAttribute('width', wPx); svg.setAttribute('height', lPx);
+
+  const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  bg.setAttribute('width', wPx); bg.setAttribute('height', lPx);
+  bg.setAttribute('fill','#3a3a3a'); svg.appendChild(bg);
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const grad = document.createElementNS('http://www.w3.org/2000/svg','radialGradient');
+  grad.id = 'vignette'; grad.setAttribute('cx','50%'); grad.setAttribute('cy','50%'); grad.setAttribute('r','70%');
+  const s1 = document.createElementNS('http://www.w3.org/2000/svg','stop');
+  s1.setAttribute('offset','0%'); s1.setAttribute('stop-color','#555'); s1.setAttribute('stop-opacity','0');
+  const s2 = document.createElementNS('http://www.w3.org/2000/svg','stop');
+  s2.setAttribute('offset','100%'); s2.setAttribute('stop-color','#111'); s2.setAttribute('stop-opacity','0.7');
+  grad.appendChild(s1); grad.appendChild(s2); defs.appendChild(grad); svg.appendChild(defs);
+
+  const vig = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  vig.setAttribute('width',wPx); vig.setAttribute('height',lPx);
+  vig.setAttribute('fill','url(#vignette)'); svg.appendChild(vig);
+
+  const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.setAttribute('stroke','rgba(0,0,0,0.5)'); g.setAttribute('stroke-width','2');
+  const gridStep = metricMode ? PX_PER_METER : PX_PER_FOOT;
+  for (let x = gridStep; x < wPx; x += gridStep) {
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',x); l.setAttribute('y1',0); l.setAttribute('x2',x); l.setAttribute('y2',lPx);
+    g.appendChild(l);
+  }
+  for (let y = gridStep; y < lPx; y += gridStep) {
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',0); l.setAttribute('y1',y); l.setAttribute('x2',wPx); l.setAttribute('y2',y);
+    g.appendChild(l);
+  }
+  svg.appendChild(g);
+  canvas.insertBefore(svg, canvas.firstChild);
+
+  if (fitMode) applyFit();
+}
+
+// ════════════════════════════════════════════════════
+// Fit to Screen
+// ════════════════════════════════════════════════════
+// We scale canvas via CSS transform so item px coords stay unchanged.
+// Drag coordinates must be divided by scale when in fit mode.
+let fitScale = 1;
+
+function applyFit() {
+  const wPx   = feetToPx(room.w);
+  const lPx   = feetToPx(room.l);
+  const avW   = canvasWrap.clientWidth;
+  const avH   = canvasWrap.clientHeight;
+  const pad   = 10;
+  const scaleX = (avW - pad * 2) / wPx;
+  const scaleY = (avH - pad * 2) / lPx;
+  fitScale = Math.min(scaleX, scaleY, 1);
+  // Center the scaled canvas within the viewport
+  const scaledW = wPx * fitScale;
+  const scaledH = lPx * fitScale;
+  const marginLeft = Math.max(pad, (avW - scaledW) / 2);
+  const marginTop  = Math.max(pad, (avH - scaledH) / 2);
+  canvas.style.transform  = `scale(${fitScale})`;
+  canvas.style.marginLeft = marginLeft + 'px';
+  canvas.style.marginTop  = marginTop  + 'px';
+  // Reset scroll so the centered canvas is always fully visible
+  canvasWrap.scrollLeft = 0;
+  canvasWrap.scrollTop  = 0;
+  canvasWrap.classList.add('fit-mode');
+}
+
+function clearFit() {
+  fitScale = 1;
+  canvas.style.transform = '';
+  canvas.style.marginLeft = '';
+  canvas.style.marginTop  = '';
+  canvas.style.margin = '20px';
+  canvasWrap.classList.remove('fit-mode');
+}
+
+function toggleFit() {
+  fitMode = !fitMode;
+  const fitBtns = [document.getElementById('fit-btn'), document.getElementById('island-fit')];
+  fitBtns.forEach(b => { if (b) b.classList.toggle('active', fitMode); });
+  if (fitMode) { applyFit(); setStatus('Fit mode on.'); }
+  else         { clearFit(); setStatus('Fit mode off.'); }
+}
+
+document.getElementById('fit-btn').addEventListener('click', toggleFit);
+document.getElementById('island-fit').addEventListener('click', toggleFit);
+
+// Reapply fit on window resize
+window.addEventListener('resize', () => { if (fitMode) applyFit(); });
+
+// ════════════════════════════════════════════════════
+// Planning Mode
+// ════════════════════════════════════════════════════
+function togglePlanMode() {
+  planMode = !planMode;
+  const planBtns = [document.getElementById('plan-btn'), document.getElementById('island-plan')];
+  planBtns.forEach(b => { if (b) b.classList.toggle('active', planMode); });
+  setStatus(planMode ? 'Planning Mode ON — new items are planned (not placed).' : 'Planning Mode OFF.');
+}
+document.getElementById('plan-btn').addEventListener('click', togglePlanMode);
+document.getElementById('island-plan').addEventListener('click', togglePlanMode);
+
+// ════════════════════════════════════════════════════
+// Units (Imperial/Metric)
+// Internal canonical storage never changes: room.w/l/h stay in feet,
+// item w_in/l_in/h_in stay in inches, regardless of display mode.
+// metricMode only affects labels, input/output conversion, and grid spacing.
+// ════════════════════════════════════════════════════
+function applyUnitMode() {
+  const rw = document.getElementById('room-w');
+  const rl = document.getElementById('room-l');
+  const rh = document.getElementById('room-h');
+  if (metricMode) {
+    roomWLabel.textContent = 'W(m):';  roomLLabel.textContent = 'L(m):';  roomHLabel.textContent = 'H(m):';
+    newWLabel.textContent  = 'Width (cm):'; newLLabel.textContent = 'Length (cm):'; newHLabel.textContent = 'Height (cm):';
+    rw.step = rl.step = rh.step = '0.1';
+    rw.max = rl.max = String(Math.round(ftToM(200)));
+    rh.max = String(Math.round(ftToM(50)));
+  } else {
+    roomWLabel.textContent = 'W(ft):'; roomLLabel.textContent = 'L(ft):'; roomHLabel.textContent = 'H(ft):';
+    newWLabel.textContent  = 'Width (in):'; newLLabel.textContent = 'Length (in):'; newHLabel.textContent = 'Height (in):';
+    rw.step = rl.step = rh.step = '0.5';
+    rw.max = rl.max = '200';
+    rh.max = '50';
+  }
+  // Refresh displayed room field values to match the room's actual size in the active unit
+  rw.value = round3(metricMode ? ftToM(room.w) : room.w);
+  rl.value = round3(metricMode ? ftToM(room.l) : room.l);
+  rh.value = round3(metricMode ? ftToM(room.h) : room.h);
+}
+
+function toggleUnits() {
+  metricMode = !metricMode;
+  const unitBtns = [document.getElementById('units-btn'), document.getElementById('island-units')];
+  unitBtns.forEach(b => { if (b) b.classList.toggle('active', metricMode); });
+  applyUnitMode();
+  applyRoomSize();  // redraw grid at the new spacing
+  rebuildSlider();  // swap tick labels between ft and to-scale meter marks
+  renderItemList(); // re-evaluate any active dimension search under the new unit
+  setStatus(metricMode ? 'Units: Metric (m / cm).' : 'Units: Imperial (ft / in).');
+}
+document.getElementById('units-btn').addEventListener('click', toggleUnits);
+document.getElementById('island-units').addEventListener('click', toggleUnits);
+
+// ════════════════════════════════════════════════════
+// Slider
+// ════════════════════════════════════════════════════
+function rebuildSlider() {
+  let maxH_in = room.h * 12;
+  items.forEach(it => { const t = it.baseHeight_in + it.h_in; if (t > maxH_in) maxH_in = t; });
+  const steps = Math.ceil(maxH_in / 12) * 2;
+  slider.min = 0; slider.max = steps;
+  slider.value = Math.min(Math.round(layerFeet * 2), steps);
+  layerFeet = slider.value / 2;
+  ticksEl.innerHTML = '';
+  const maxFeet = steps / 2;
+  // Per-step reference dots: snap grid is untouched, still one per half-foot.
+  // In metric mode these never carry the numeric label — meters don't
+  // generally land on a half-foot boundary, so the label is handled below
+  // as an independently-positioned overlay instead.
+  for (let s = 0; s <= steps; s++) {
+    const ft = s / 2;
+    const isWholeFt = ft % 1 === 0;
+    const div = document.createElement('div');
+    div.className = 'tick-label' + (isWholeFt ? '' : ' half');
+    div.textContent = (!metricMode && isWholeFt) ? ft + 'ft' : '·';
+    ticksEl.appendChild(div);
+  }
+  // Meter labels, positioned by true proportional height along the slider's
+  // range — independent of the step grid above. Snapping is unaffected.
+  if (metricMode && maxFeet > 0) {
+    const maxMeters = Math.floor(ftToM(maxFeet));
+    for (let m = 0; m <= maxMeters; m++) {
+      const pct = (mToFt(m) / maxFeet) * 100;
+      const label = document.createElement('div');
+      label.className = 'meter-label';
+      label.style.bottom = pct + '%';
+      label.textContent = m + 'm';
+      ticksEl.appendChild(label);
+    }
+  }
+}
+slider.addEventListener('input', () => {
+  layerFeet = slider.value / 2;
+  renderAllItems();
+  if (metricMode) {
+    setStatus(`Layer: ${round3(ftToM(layerFeet))}m (${round3(inToCm(layerFeet * 12))}cm)`);
+  } else {
+    setStatus(`Layer: ${layerFeet}ft (${layerFeet * 12}in)`);
+  }
+});
+slider.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+slider.addEventListener('touchmove',  e => e.stopPropagation(), { passive: true });
+
+// ════════════════════════════════════════════════════
+// AABB
+// ════════════════════════════════════════════════════
+function itemRect(item) {
+  return { x: item.x_px, y: item.y_px,
+           x2: item.x_px + inchesToPx(item.w_in),
+           y2: item.y_px + inchesToPx(item.l_in) };
+}
+function rectsOverlap(a, b) {
+  return a.x < b.x2 && a.x2 > b.x && a.y < b.y2 && a.y2 > b.y;
+}
+
+// ════════════════════════════════════════════════════
+// Cascading topo base-height recompute
+// ════════════════════════════════════════════════════
+function recomputeAllBaseHeights() {
+  const sorted = [...items].sort((a, b) => a.dragOrder - b.dragOrder);
+  sorted.forEach(it => { it.baseHeight_in = 0; });
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i], cr = itemRect(cur);
+    let maxTop = 0;
+    for (let j = 0; j < i; j++) {
+      const prev = sorted[j];
+      if (rectsOverlap(cr, itemRect(prev))) {
+        const top = prev.baseHeight_in + prev.h_in;
+        if (top > maxTop) maxTop = top;
+      }
+    }
+    cur.baseHeight_in = maxTop;
+  }
+}
+
+function zIndexFor(item) { return 100 + item.dragOrder; }
+function isVisible(item) { return item.baseHeight_in < layerFeet * 12; }
+
+function renderAllItems() {
+  // Determine the selected item's dragOrder for dim-above logic
+  const selItem = selectedId ? items.find(i => i.id === selectedId) : null;
+  const selDragOrder = selItem ? selItem.dragOrder : -1;
+
+  items.forEach(item => {
+    const el = document.getElementById('item-' + item.id);
+    if (!el) return;
+    // Planned items are never shown on the canvas
+    if (item.planned) { el.style.display = 'none'; return; }
+    el.style.display = isVisible(item) ? 'block' : 'none';
+    el.style.zIndex  = zIndexFor(item);
+    el.classList.toggle('selected', item.id === selectedId);
+    // Dim items stacked above the selected item (higher dragOrder + overlapping)
+    const shouldDim = selItem && !item.planned &&
+                      item.dragOrder > selDragOrder &&
+                      rectsOverlap(itemRect(item), itemRect(selItem));
+    el.classList.toggle('dim-above', shouldDim);
+  });
+}
+
+// ════════════════════════════════════════════════════
+// Tooltip
+// ════════════════════════════════════════════════════
+let tooltipTimer = null;
+function showTooltip(item, x, y) {
+  if (tooltipTimer) { clearTimeout(tooltipTimer); tooltipTimer = null; }
+  let wD, lD, hD, bD, unit;
+  if (metricMode) {
+    wD = round3(inToCm(item.w_in)); lD = round3(inToCm(item.l_in));
+    hD = round3(inToCm(item.h_in)); bD = round3(inToCm(item.baseHeight_in));
+    unit = 'cm';
+  } else {
+    wD = round3(item.w_in); lD = round3(item.l_in);
+    hD = round3(item.h_in); bD = round3(item.baseHeight_in);
+    unit = 'in';
+  }
+  tooltip.textContent = `${getItemName(item)}  ${wD}${unit} W x ${lD}${unit} L x ${hD}${unit} H  base:${bD}${unit}`;
+  tooltip.style.left = (x + 14) + 'px';
+  tooltip.style.top  = (y + 10) + 'px';
+  tooltip.style.display = 'block';
+}
+function hideTooltip() {
+  tooltip.style.display = 'none';
+  if (tooltipTimer) { clearTimeout(tooltipTimer); tooltipTimer = null; }
+}
+
+// ════════════════════════════════════════════════════
+// Clamp drag coords accounting for fit scale
+// ════════════════════════════════════════════════════
+function clampItem(item, nx, ny) {
+  return {
+    nx: Math.round(Math.max(0, Math.min(feetToPx(room.w) - inchesToPx(item.w_in), nx))),
+    ny: Math.round(Math.max(0, Math.min(feetToPx(room.l) - inchesToPx(item.l_in), ny)))
+  };
+}
+
+// ════════════════════════════════════════════════════
+// Create item DOM element
+// ════════════════════════════════════════════════════
+function createItemElement(item) {
+  const el = document.createElement('div');
+  el.id        = 'item-' + item.id;
+  el.className = 'room-item';
+  el.style.left       = item.x_px + 'px';
+  el.style.top        = item.y_px + 'px';
+  el.style.width      = inchesToPx(item.w_in) + 'px';
+  el.style.height     = inchesToPx(item.l_in) + 'px';
+  el.style.background = item.color;
+  el.style.zIndex     = zIndexFor(item);
+
+  const ring = document.createElement('div');
+  ring.className = 'hold-ring';
+  el.appendChild(ring);
+
+  // ── MOUSE ──────────────────────────────────────────
+  el.addEventListener('mousemove', e => {
+    if (!isVisible(item)) return;
+    showTooltip(item, e.clientX, e.clientY);
+  });
+  el.addEventListener('mouseleave', hideTooltip);
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault(); e.stopPropagation();
+    hideTooltip(); deleteItem(item.id);
+  });
+
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    let didDrag = false;
+    const startCX = e.clientX, startCY = e.clientY;
+    const startX  = item.x_px, startY  = item.y_px;
+    const undoSnap = makeUndoMoveSnap(item);
+
+    function onMouseMove(e2) {
+      // divide client delta by fitScale so items track the cursor correctly
+      const dx = (e2.clientX - startCX) / fitScale;
+      const dy = (e2.clientY - startCY) / fitScale;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
+      const { nx, ny } = clampItem(item, startX + dx, startY + dy);
+      item.x_px = nx; item.y_px = ny;
+      el.style.left = nx + 'px'; el.style.top = ny + 'px';
+    }
+    function onMouseUp() {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup',   onMouseUp);
+      if (didDrag) {
+        pushUndo(undoSnap);
+        dragOrderCounter++; item.dragOrder = dragOrderCounter;
+        recomputeAllBaseHeights(); rebuildSlider(); renderAllItems(); renderItemList();
+      } else {
+        openNameDialog(item.id);
+      }
+    }
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup',   onMouseUp);
+  });
+
+  // ── TOUCH ──────────────────────────────────────────
+  // Gesture map (finger stationary, no drag):
+  //   Single tap (lift < 300ms)  : tooltip
+  //   Double-tap (2nd tap within
+  //     300ms of 1st lift)       : name dialog
+  //   1500ms hold (timer fires)  : delete immediately
+  //
+  // Double-tap is tracked independently via lastTapTime.
+  // deleteTimerFired flag prevents touchend acting after delete fires.
+
+  let touchMoved = false, tapStartTime = 0;
+  let deleteTimer = null, deleteTimerFired = false;
+  let lastTapTime = 0; // timestamp of the most recent clean single-tap lift
+
+  function cancelTimers() {
+    if (deleteTimer) { clearTimeout(deleteTimer); deleteTimer = null; }
+    ring.classList.remove('active');
+  }
+
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { cancelTimers(); return; }
+    e.stopPropagation();
+    const t = e.touches[0];
+    touchMoved = false; deleteTimerFired = false; tapStartTime = Date.now();
+    const undoSnap = makeUndoMoveSnap(item);
+    const startX = item.x_px, startY = item.y_px;
+    const startCX = t.clientX, startCY = t.clientY;
+    el._touch = { undoSnap, startX, startY, startCX, startCY, didDrag: false };
+    ring.classList.add('active');
+    // 1500ms hold with no move = delete
+    deleteTimer = setTimeout(() => {
+      deleteTimer = null; ring.classList.remove('active');
+      if (!touchMoved) {
+        deleteTimerFired = true;
+        lastTapTime = 0; // reset double-tap state on delete
+        deleteItem(item.id);
+      }
+    }, 1500);
+  }, { passive: true });
+
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1 || !el._touch) return;
+    e.stopPropagation();
+    const t = e.touches[0];
+    const dx = (t.clientX - el._touch.startCX) / fitScale;
+    const dy = (t.clientY - el._touch.startCY) / fitScale;
+    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+      if (!touchMoved) { cancelTimers(); touchMoved = true; }
+      el._touch.didDrag = true;
+    }
+    if (touchMoved) {
+      const { nx, ny } = clampItem(item, el._touch.startX + dx, el._touch.startY + dy);
+      item.x_px = nx; item.y_px = ny;
+      el.style.left = nx + 'px'; el.style.top = ny + 'px';
+    }
+  }, { passive: true });
+
+  el.addEventListener('touchend', e => {
+    e.preventDefault(); // suppress synthetic mouse/click events from browser
+    e.stopPropagation(); cancelTimers();
+    if (!el._touch) return;
+    const { undoSnap, didDrag } = el._touch; el._touch = null;
+    // If the 1500ms delete timer already fired, do nothing further
+    if (deleteTimerFired) return;
+    if (didDrag) {
+      lastTapTime = 0; // movement resets double-tap state
+      pushUndo(undoSnap);
+      dragOrderCounter++; item.dragOrder = dragOrderCounter;
+      recomputeAllBaseHeights(); rebuildSlider(); renderAllItems(); renderItemList();
+    } else if (!touchMoved) {
+      const now = Date.now();
+      const elapsed = now - tapStartTime;
+      // Only treat as a tap if finger was down briefly (not a long press)
+      if (elapsed < 600) {
+        const sinceLastTap = now - lastTapTime;
+        if (lastTapTime > 0 && sinceLastTap < 400) {
+          // Double-tap: open name dialog
+          lastTapTime = 0;
+          hideTooltip();
+          openNameDialog(item.id);
+        } else {
+          // Single tap: show tooltip, record tap time for double-tap detection
+          lastTapTime = now;
+          hideTooltip();
+          const r = el.getBoundingClientRect();
+          showTooltip(item, r.left + r.width / 2, r.top - 10);
+          tooltipTimer = setTimeout(hideTooltip, 2500);
+        }
+      } else {
+        // Long press released before delete timer (600ms–1499ms): no action
+        lastTapTime = 0;
+      }
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchcancel', e => {
+    e.stopPropagation(); cancelTimers(); el._touch = null;
+  }, { passive: false });
+
+  canvas.appendChild(el);
+}
+
+// ════════════════════════════════════════════════════
+// Undo snapshot
+// ════════════════════════════════════════════════════
+function makeUndoMoveSnap(item) {
+  return {
+    type: 'move', id: item.id,
+    x_px: item.x_px, y_px: item.y_px, dragOrder: item.dragOrder,
+    baseHeights: items.map(i => ({ id: i.id, b: i.baseHeight_in, d: i.dragOrder }))
+  };
+}
+
+// ════════════════════════════════════════════════════
+// Add item
+// ════════════════════════════════════════════════════
+function addItem(w_in, l_in, h_in, customName) {
+  itemCounter++; dragOrderCounter++;
+  // clamp dimensions defensively (dialog has max attrs but JS callers should also clamp)
+  w_in = Math.max(1, Math.min(1000, w_in));
+  l_in = Math.max(1, Math.min(1000, l_in));
+  h_in = Math.max(1, Math.min(1000, h_in));
+  const id = 'item-id-' + (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '_' + itemCounter));
+  // Spawn at center of room (clamped so item stays within bounds)
+  const cx = Math.round(Math.max(0, Math.min(feetToPx(room.w) - inchesToPx(w_in), (feetToPx(room.w) - inchesToPx(w_in)) / 2)));
+  const cy = Math.round(Math.max(0, Math.min(feetToPx(room.l) - inchesToPx(l_in), (feetToPx(room.l) - inchesToPx(l_in)) / 2)));
+  const item = { id, serial: itemCounter, dragOrder: dragOrderCounter,
+                 w_in, l_in, h_in, x_px: cx, y_px: cy,
+                 color: randColor(), name: (customName || '').trim(), baseHeight_in: 0,
+                 planned: planMode };
+  items.push(item);
+  if (!item.planned) recomputeAllBaseHeights();
+  createItemElement(item);
+  pushUndo({ type: 'add', id });
+  rebuildSlider(); renderAllItems(); renderItemList();
+  setStatus(`Added ${getItemName(item)}${item.planned ? ' (planned)' : ''}`);
+}
+
+// ════════════════════════════════════════════════════
+// Delete item
+// ════════════════════════════════════════════════════
+function deleteItem(id) {
+  const item = items.find(i => i.id === id); if (!item) return;
+  pushUndo({ type: 'delete', item: JSON.parse(JSON.stringify(item)),
+             baseHeights: items.map(i => ({ id: i.id, b: i.baseHeight_in, d: i.dragOrder })) });
+  document.getElementById('item-' + id)?.remove();
+  items = items.filter(i => i.id !== id);
+  if (selectedId === id) selectedId = null;
+  recomputeAllBaseHeights(); rebuildSlider(); renderAllItems(); renderItemList();
+  setStatus(`Deleted ${getItemName(item)}`);
+}
+
+// ════════════════════════════════════════════════════
+// Commit planned item to the room
+// ════════════════════════════════════════════════════
+function commitPlannedItem(id) {
+  const item = items.find(i => i.id === id); if (!item || !item.planned) return;
+  // Re-center now that it's being placed for real
+  const cx = Math.round(Math.max(0, Math.min(feetToPx(room.w) - inchesToPx(item.w_in), (feetToPx(room.w) - inchesToPx(item.w_in)) / 2)));
+  const cy = Math.round(Math.max(0, Math.min(feetToPx(room.l) - inchesToPx(item.l_in), (feetToPx(room.l) - inchesToPx(item.l_in)) / 2)));
+  item.x_px = cx; item.y_px = cy;
+  item.planned = false;
+  // Update the DOM element position and make it visible
+  const el = document.getElementById('item-' + item.id);
+  if (el) { el.style.left = cx + 'px'; el.style.top = cy + 'px'; }
+  pushUndo({ type: 'commit', id });
+  recomputeAllBaseHeights(); rebuildSlider(); renderAllItems(); renderItemList();
+  setStatus(`Committed ${getItemName(item)} to room.`);
+}
+function pushUndo(entry) { undoStack.push(entry); }
+
+function doUndo() {
+  if (!undoStack.length) { setStatus('Nothing to undo.'); return; }
+  const entry = undoStack.pop();
+  let undoMsg = 'Undo done.'; // fallback, overwritten by each branch below when the item is found
+  if (entry.type === 'add') {
+    const item = items.find(i => i.id === entry.id);
+    const name = item ? getItemName(item) : 'item';
+    const wasPlanned = item ? !!item.planned : false;
+    document.getElementById('item-' + entry.id)?.remove();
+    items = items.filter(i => i.id !== entry.id);
+    if (selectedId === entry.id) selectedId = null;
+    undoMsg = wasPlanned ? `Undid planning of ${name}` : `Undid ${name}`;
+  } else if (entry.type === 'delete') {
+    items.push(entry.item);
+    createItemElement(entry.item);
+    restoreBaseHeights(entry.baseHeights);
+    undoMsg = `Undid deletion of ${getItemName(entry.item)}`;
+  } else if (entry.type === 'move') {
+    const item = items.find(i => i.id === entry.id);
+    if (item) {
+      const name = getItemName(item);
+      item.x_px = entry.x_px; item.y_px = entry.y_px; item.dragOrder = entry.dragOrder;
+      const el = document.getElementById('item-' + item.id);
+      if (el) { el.style.left = item.x_px + 'px'; el.style.top = item.y_px + 'px'; }
+      restoreBaseHeights(entry.baseHeights);
+      undoMsg = `Undid drag of ${name}`;
+    }
+  } else if (entry.type === 'name') {
+    const item = items.find(i => i.id === entry.id);
+    if (item) {
+      const newName = getItemName(item); // name it currently has, before reverting
+      item.name = entry.oldName;
+      const oldName = getItemName(item); // re-read via the same helper so the "no custom name" fallback applies consistently
+      undoMsg = `Undid rename of ${oldName} to ${newName}`;
+    }
+  } else if (entry.type === 'commit') {
+    const item = items.find(i => i.id === entry.id);
+    if (item) { item.planned = true; undoMsg = `Undid ${getItemName(item)}`; }
+  } else if (entry.type === 'swap') {
+    const item = items.find(i => i.id === entry.id);
+    if (item) {
+      const name = getItemName(item);
+      item.w_in = entry.w_in; item.l_in = entry.l_in;
+      item.x_px = entry.x_px; item.y_px = entry.y_px;
+      const el = document.getElementById('item-' + item.id);
+      if (el) {
+        el.style.width  = inchesToPx(item.w_in) + 'px';
+        el.style.height = inchesToPx(item.l_in) + 'px';
+        el.style.left   = item.x_px + 'px';
+        el.style.top    = item.y_px + 'px';
+      }
+      restoreBaseHeights(entry.baseHeights);
+      undoMsg = `Undid swap of ${name}`;
+    }
+  }
+  rebuildSlider(); renderAllItems(); renderItemList();
+  setStatus(undoMsg);
+}
+
+function restoreBaseHeights(snapshot) {
+  if (!snapshot) return;
+  snapshot.forEach(bh => {
+    const it = items.find(i => i.id === bh.id);
+    if (it) { it.baseHeight_in = bh.b; it.dragOrder = bh.d; }
+  });
+}
+
+// Wire undo buttons
+document.getElementById('undo-btn').addEventListener('click', doUndo);
+document.getElementById('island-undo').addEventListener('click', doUndo);
+
+// ════════════════════════════════════════════════════
+// Name dialog
+// ════════════════════════════════════════════════════
+let namingItemId = null;
+function openNameDialog(id) {
+  namingItemId = id;
+  const item = items.find(i => i.id === id);
+  document.getElementById('name-input').value = item ? item.name : '';
+  document.getElementById('name-dialog').style.display = 'flex';
+  setTimeout(() => document.getElementById('name-input').focus(), 80);
+  selectItem(id);
+}
+document.getElementById('name-confirm').addEventListener('click', () => {
+  if (!namingItemId) return;
+  const item = items.find(i => i.id === namingItemId);
+  if (item) {
+    const newName = document.getElementById('name-input').value.trim();
+    if (newName !== item.name) {
+      pushUndo({ type: 'name', id: item.id, oldName: item.name });
+      item.name = newName;
+    }
+  }
+  document.getElementById('name-dialog').style.display = 'none';
+  namingItemId = null; renderItemList();
+});
+document.getElementById('name-cancel').addEventListener('click', () => {
+  document.getElementById('name-dialog').style.display = 'none'; namingItemId = null;
+});
+document.getElementById('name-delete').addEventListener('click', () => {
+  const id = namingItemId;
+  document.getElementById('name-dialog').style.display = 'none'; namingItemId = null;
+  if (id) deleteItem(id);
+});
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter')  document.getElementById('name-confirm').click();
+  if (e.key === 'Escape') document.getElementById('name-cancel').click();
+});
+
+// Swap Width/Length (rotate item 90°) from name dialog
+document.getElementById('name-swap-btn').addEventListener('click', () => {
+  if (!namingItemId) return;
+  const item = items.find(i => i.id === namingItemId); if (!item) return;
+  pushUndo({ type: 'swap', id: item.id, w_in: item.w_in, l_in: item.l_in,
+             x_px: item.x_px, y_px: item.y_px,
+             baseHeights: items.map(i => ({ id: i.id, b: i.baseHeight_in, d: i.dragOrder })) });
+  // Swap dimensions and keep the item center-anchored
+  const oldW = item.w_in, oldL = item.l_in;
+  const cx = item.x_px + inchesToPx(oldW) / 2;
+  const cy = item.y_px + inchesToPx(oldL) / 2;
+  item.w_in = oldL; item.l_in = oldW;
+  const { nx, ny } = clampItem(item, cx - inchesToPx(item.w_in) / 2, cy - inchesToPx(item.l_in) / 2);
+  item.x_px = nx; item.y_px = ny;
+  const el = document.getElementById('item-' + item.id);
+  if (el) {
+    el.style.width  = inchesToPx(item.w_in) + 'px';
+    el.style.height = inchesToPx(item.l_in) + 'px';
+    el.style.left   = item.x_px + 'px';
+    el.style.top    = item.y_px + 'px';
+  }
+  recomputeAllBaseHeights(); rebuildSlider(); renderAllItems(); renderItemList();
+});
+
+// ════════════════════════════════════════════════════
+// Add item dialog
+// ════════════════════════════════════════════════════
+function openAddDialog() {
+  document.getElementById('add-dialog').style.display = 'flex';
+  setTimeout(() => document.getElementById('new-name').focus(), 50);
+}
+document.getElementById('add-item-btn').addEventListener('click', openAddDialog);
+document.getElementById('island-add').addEventListener('click', openAddDialog);
+document.getElementById('add-cancel').addEventListener('click', () => {
+  document.getElementById('add-dialog').style.display = 'none';
+});
+document.getElementById('add-confirm').addEventListener('click', () => {
+  const name = document.getElementById('new-name').value;
+  let w = parseFloat(document.getElementById('new-w').value) || 12;
+  let l = parseFloat(document.getElementById('new-l').value) || 12;
+  let h = parseFloat(document.getElementById('new-h').value) || 12;
+  // Limit to 3 decimal places in the unit being entered, then convert to
+  // canonical inches if metric, rounding again to absorb conversion noise.
+  w = round3(w); l = round3(l); h = round3(h);
+  // Storage precision is 6dp inches, not 3dp: 3dp-inches doesn't align with the
+  // 3dp-cm grid the value was entered on, which was rounding clean cm entries
+  // (e.g. 12cm) into slightly-off tooltip displays (11.999cm). 6dp inches is far
+  // finer than any cm/mm display grid, so the entered cm value round-trips exactly.
+  if (metricMode) { w = round6(cmToIn(w)); l = round6(cmToIn(l)); h = round6(cmToIn(h)); }
+  document.getElementById('add-dialog').style.display = 'none';
+  addItem(w, l, h, name);
+});
+document.getElementById('new-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('new-w').focus();
+  if (e.key === 'Escape') document.getElementById('add-cancel').click();
+});
+document.getElementById('new-h').addEventListener('keydown', e => {
+  if (e.key === 'Enter')  document.getElementById('add-confirm').click();
+  if (e.key === 'Escape') document.getElementById('add-cancel').click();
+});
+
+// Live-limit typed decimal places to 3 as the user types (both unit options)
+function limitTo3Decimals(e) {
+  const m = e.target.value.match(/^(\d*\.\d{3})\d+/);
+  if (m) e.target.value = m[1];
+}
+['new-w', 'new-l', 'new-h'].forEach(id => {
+  document.getElementById(id).addEventListener('input', limitTo3Decimals);
+});
+
+// ════════════════════════════════════════════════════
+// Item list search
+// Ephemeral UI state only — never saved to file, never part of undo history.
+// Tokens split on whitespace; each token is either a dimension filter
+// (W/L/H followed by a number, e.g. "W20") or a name substring filter.
+// All tokens must match (AND) for an item to be shown.
+// ════════════════════════════════════════════════════
+let searchQuery = '';
+const DIM_TOKEN_RE = /^([wlh])(\d+(?:\.\d+)?)$/i;
+const DIM_EPSILON = 0.01;
+
+function getSearchTokens() {
+  return searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function itemMatchesSearch(item, tokens) {
+  if (!tokens.length) return true;
+  const name = getItemName(item).toLowerCase();
+  for (const token of tokens) {
+    const dimMatch = token.match(DIM_TOKEN_RE);
+    if (dimMatch) {
+      const axis = dimMatch[1].toLowerCase();
+      const rawVal = parseFloat(dimMatch[2]);
+      const val = metricMode ? cmToIn(rawVal) : rawVal; // interpret token in the active unit
+      const itemVal = axis === 'w' ? item.w_in : axis === 'l' ? item.l_in : item.h_in;
+      if (Math.abs(itemVal - val) > DIM_EPSILON) return false;
+    } else if (!name.includes(token)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+itemSearchEl.addEventListener('input', () => {
+  searchQuery = itemSearchEl.value;
+  renderItemList();
+});
+itemSearchClearEl.addEventListener('click', () => {
+  searchQuery = '';
+  itemSearchEl.value = '';
+  itemSearchEl.focus();
+  renderItemList();
+});
+
+// ════════════════════════════════════════════════════
+// Item list panel
+// ════════════════════════════════════════════════════
+function renderItemList() {
+  itemListEl.innerHTML = '';
+  const tokens = getSearchTokens();
+  const visibleItems = [...items].sort((a,b) => a.serial - b.serial)
+                                  .filter(item => itemMatchesSearch(item, tokens));
+
+  if (!visibleItems.length) {
+    const msg = document.createElement('div');
+    msg.className = 'list-empty-msg';
+    msg.textContent = items.length ? 'No items match search.' : 'No items yet.';
+    itemListEl.appendChild(msg);
+    return;
+  }
+
+  visibleItems.forEach(item => {
+    const div  = document.createElement('div');
+    const isPlanned = !!item.planned;
+    div.className = 'list-entry' +
+                    (item.id === selectedId ? ' selected' : '') +
+                    (isPlanned ? ' planned' : '');
+    const dot  = document.createElement('div');
+    dot.className = 'list-color-dot'; dot.style.background = item.color;
+    const span = document.createElement('span');
+    span.textContent = getItemName(item) + (isPlanned ? ' [plan]' : '');
+    div.appendChild(dot); div.appendChild(span);
+
+    if (!isPlanned) {
+      // Normal items: click to select and scroll to in canvas
+      div.addEventListener('click', () => {
+        selectItem(item.id);
+        document.getElementById('item-' + item.id)?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      });
+    } else {
+      // Planned items: double-click (mouse) or 1s hold (touch) to commit to room
+      // Mouse double-click
+      div.addEventListener('dblclick', () => commitPlannedItem(item.id));
+
+      // Touch 1s hold
+      let holdTimer = null;
+      div.addEventListener('touchstart', () => {
+        holdTimer = setTimeout(() => { holdTimer = null; commitPlannedItem(item.id); }, 1000);
+      }, { passive: true });
+      div.addEventListener('touchend', () => {
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      }, { passive: true });
+      div.addEventListener('touchcancel', () => {
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      }, { passive: true });
+    }
+
+    itemListEl.appendChild(div);
+  });
+}
+
+function selectItem(id) { selectedId = id; renderAllItems(); renderItemList(); }
+
+canvas.addEventListener('click', e => {
+  if (!e.target.classList.contains('room-item') && !e.target.classList.contains('hold-ring')) {
+    selectedId = null; renderAllItems(); renderItemList();
+  }
+});
+
+// ════════════════════════════════════════════════════
+// Room set
+// ════════════════════════════════════════════════════
+document.getElementById('set-room-btn').addEventListener('click', () => {
+  const rawW = parseFloat(document.getElementById('room-w').value) || (metricMode ? 3.7 : 12);
+  const rawL = parseFloat(document.getElementById('room-l').value) || (metricMode ? 3   : 10);
+  const rawH = parseFloat(document.getElementById('room-h').value) || (metricMode ? 2.4 : 8);
+  room.w = metricMode ? mToFt(rawW) : rawW;
+  room.l = metricMode ? mToFt(rawL) : rawL;
+  room.h = metricMode ? mToFt(rawH) : rawH;
+  applyRoomSize(); rebuildSlider();
+  const unit = metricMode ? 'm' : 'ft';
+  setStatus(`Room: ${round3(rawW)}${unit} x ${round3(rawL)}${unit} x ${round3(rawH)}${unit}`);
+});
+
+// ════════════════════════════════════════════════════
+// Save / Load
+// ════════════════════════════════════════════════════
+function buildSavePayload() {
+  return JSON.stringify({ room, items, itemCounter, dragOrderCounter, layerFeet, planMode, metricMode }, null, 2);
+}
+
+document.getElementById('save-btn').addEventListener('click', () => {
+  const blob = new Blob([buildSavePayload()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'room_inventory.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
+  setStatus('Saved.');
+});
+document.getElementById('load-btn').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try { loadState(JSON.parse(ev.target.result)); setStatus('Loaded.'); }
+    catch(err) { setStatus('Load error: ' + err.message); }
+  };
+  reader.readAsText(file); e.target.value = '';
+});
+
+// Sanitize a number from untrusted input: must be finite, within [min,max], fallback to def.
+function safeNum(val, min, max, def) {
+  const n = Number(val);
+  if (!isFinite(n) || n < min || n > max) return def;
+  return n;
+}
+
+// Validate an item ID from a loaded file: must match our known patterns or be rejected.
+// Old IDs: 'i<digits>_<digits>', new IDs: 'item-id-<uuid>'
+const SAFE_ID_RE = /^(i\d+_\d+|item-id-[0-9a-f-]{36})$/;
+function safeId(val) {
+  if (typeof val !== 'string') return null;
+  return SAFE_ID_RE.test(val) ? val : null;
+}
+
+function loadState(state) {
+  if (!state || typeof state !== 'object') { setStatus('Load error: invalid file.'); return; }
+
+  // Validate and clamp room dimensions
+  const rawRoom = state.room || {};
+  const loadedRoom = {
+    w: safeNum(rawRoom.w, 1, 200, 12),
+    l: safeNum(rawRoom.l, 1, 200, 10),
+    h: safeNum(rawRoom.h, 1, 50,   8),
+  };
+
+  const loadedItemCounter      = safeNum(state.itemCounter,      0, 1e9, 0);
+  const loadedDragOrderCounter = safeNum(state.dragOrderCounter, 0, 1e9, 0);
+  const loadedLayerFeet        = safeNum(state.layerFeet,        0, 1e6, loadedRoom.h);
+
+  // Validate items array
+  const rawItems = Array.isArray(state.items) ? state.items : [];
+  if (rawItems.length > 500) { setStatus('Load error: too many items (max 500).'); return; }
+
+  const validatedItems = [];
+  for (const it of rawItems) {
+    if (!it || typeof it !== 'object') continue;
+    const id = safeId(it.id);
+    if (!id) continue; // reject bad IDs
+    validatedItems.push({
+      id,
+      serial:        safeNum(it.serial,        1, 1e9, validatedItems.length + 1),
+      dragOrder:     safeNum(it.dragOrder !== undefined ? it.dragOrder : it.serial, 0, 1e9, validatedItems.length),
+      w_in:          safeNum(it.w_in,           1, 1000, 12),
+      l_in:          safeNum(it.l_in,           1, 1000, 12),
+      h_in:          safeNum(it.h_in,           1, 1000, 12),
+      x_px:          safeNum(it.x_px,           0, 1e6,  10),
+      y_px:          safeNum(it.y_px,           0, 1e6,  10),
+      baseHeight_in: safeNum(it.baseHeight_in,  0, 1e6,   0),
+      // name: textContent-only, safe as-is but truncate to avoid absurd lengths
+      name:          (typeof it.name === 'string' ? it.name : '').slice(0, 200),
+      // color: only accept valid hsl() strings we generate, fallback to random
+      color:         (typeof it.color === 'string' && /^hsl\(\d+,\d+%,\d+%\)$/.test(it.color))
+                       ? it.color : randColor(),
+      // planned: boolean only
+      planned:       it.planned === true,
+    });
+  }
+
+  // All validation passed — now commit to state
+  items.forEach(it => document.getElementById('item-' + it.id)?.remove());
+  items = []; undoStack = []; selectedId = null;
+
+  room             = loadedRoom;
+  itemCounter      = loadedItemCounter;
+  dragOrderCounter = loadedDragOrderCounter;
+  layerFeet        = loadedLayerFeet;
+
+  // Restore planMode if saved
+  if (typeof state.planMode === 'boolean' && state.planMode !== planMode) togglePlanMode();
+
+  // Restore metricMode if saved. Set the flag directly (not via toggleUnits(),
+  // which only fires on a change) so applyUnitMode() below always re-renders
+  // the room fields correctly for whatever the current mode ends up being.
+  if (typeof state.metricMode === 'boolean') metricMode = state.metricMode;
+  document.getElementById('units-btn')?.classList.toggle('active', metricMode);
+  document.getElementById('island-units')?.classList.toggle('active', metricMode);
+
+  applyUnitMode(); // sets room-w/l/h labels, bounds, and values for the restored mode
+  applyRoomSize();
+
+  validatedItems.forEach(item => { items.push(item); createItemElement(item); });
+  recomputeAllBaseHeights();
+
+  // Search is ephemeral UI state — reset it on load, not part of saved data
+  searchQuery = '';
+  itemSearchEl.value = '';
+
+  rebuildSlider();
+  slider.value = Math.round(layerFeet * 2);
+  renderAllItems(); renderItemList();
+}
+
+// ════════════════════════════════════════════════════
+// sessionStorage crash-recovery snapshot
+// Written whenever the tab goes to background (visibilitychange hidden).
+// On load, if a snapshot exists it is offered for recovery.
+// Key uses a hash of the page URL so multiple instances don't collide.
+// ════════════════════════════════════════════════════
+const SS_KEY = 'rimSnapshot_' + btoa(location.href).slice(0, 24);
+
+function writeSnapshot() {
+  try {
+    sessionStorage.setItem(SS_KEY, buildSavePayload());
+  } catch(e) { /* sessionStorage unavailable or full — silently ignore */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') writeSnapshot();
+});
+
+// Also snapshot every 60 seconds as a belt-and-suspenders measure
+setInterval(writeSnapshot, 60_000);
+
+function tryRecoverSnapshot() {
+  let raw;
+  try { raw = sessionStorage.getItem(SS_KEY); } catch(e) { return; }
+  if (!raw) return;
+  // Only offer recovery if there is actually something useful in the snapshot
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch(e) { return; }
+  if (!parsed || !Array.isArray(parsed.items) || parsed.items.length === 0) return;
+  // Show a dismissible recovery banner
+  const banner = document.createElement('div');
+  banner.id = 'recovery-banner';
+  banner.style.cssText = [
+    'position:fixed','top:0','left:0','right:0','z-index:99999',
+    'background:#4a3010','color:#ffd080','font-family:monospace','font-size:13px',
+    'padding:10px 14px','display:flex','align-items:center','gap:12px',
+    'border-bottom:2px solid #c87020'
+  ].join(';');
+  banner.innerHTML =
+    '<span>&#9888; Unsaved session data recovered from before page reload.</span>' +
+    '<button id="rec-restore" style="background:#c87020;border:none;color:#fff;padding:4px 10px;cursor:pointer;font-family:monospace;">Restore</button>' +
+    '<button id="rec-discard" style="background:#383838;border:1px solid #666;color:#ccc;padding:4px 10px;cursor:pointer;font-family:monospace;">Discard</button>';
+  document.body.prepend(banner);
+  document.getElementById('rec-restore').addEventListener('click', () => {
+    try { loadState(parsed); setStatus('Session recovered.'); } catch(e) { setStatus('Recovery failed: ' + e.message); }
+    try { sessionStorage.removeItem(SS_KEY); } catch(e) {}
+    banner.remove();
+  });
+  document.getElementById('rec-discard').addEventListener('click', () => {
+    try { sessionStorage.removeItem(SS_KEY); } catch(e) {}
+    banner.remove();
+  });
+}
+
+// ════════════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════════════
+applyRoomSize();
+rebuildSlider();
+layerFeet = room.h; slider.value = slider.max;
+renderAllItems(); renderItemList();
+setStatus(isTouch()
+  ? TOUCH_INSTRUCTIONS
+  : 'Click: rename. Right-click: delete. Hover: tooltip.');
+
+// Attempt session recovery
+tryRecoverSnapshot();
+</script>
+</body>
+</html>
