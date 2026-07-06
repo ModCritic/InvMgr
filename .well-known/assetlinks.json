@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.modcritic.invmgr",
+        "sha256_cert_fingerprints": ["3B:44:4F:4D:B7:C5:20:3D:AA:28:D4:A1:2D:82:06:49:34:4D:F3:C7:E9:33:41:26:AB:99:B7:E2:3E:2D:36:63"]
+      }
+    }]
