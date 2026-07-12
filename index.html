@@ -466,7 +466,7 @@
 <div class="modal-overlay" id="name-dialog" style="display:none">
   <div class="modal-box" style="position:relative">
     <button id="name-swap-btn" title="Swap Width and Length" style="position:absolute;top:12px;right:12px;background:#383838;border:1px solid #555;color:#ccc;font-family:monospace;font-size:13px;padding:2px 7px;cursor:pointer;touch-action:manipulation;" onmouseenter="this.style.background='#484848'" onmouseleave="this.style.background='#383838'">&#x21BB;</button>
-    <h2>Name Item</h2>
+    <h2>Edit Item</h2>
     <div class="modal-row"><label>Name:</label><input type="text" id="name-input" placeholder="Leave blank for default"></div>
     <div class="modal-row"><label id="name-w-label">Width (in):</label><input type="number" id="name-w" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-row"><label id="name-l-label">Length (in):</label><input type="number" id="name-l" value="12" min="1" max="1000" step="0.5"></div>
@@ -547,17 +547,19 @@ function randColor()   { return `hsl(${Math.floor(Math.random()*360)},55%,42%)`;
 function inchesToPx(i) { return i * PX_PER_INCH; }
 function feetToPx(f)   { return f * PX_PER_FOOT; }
 function getItemName(item) { return item.name || `item #${item.serial}`; }
-const TOUCH_INSTRUCTIONS = 'Tap: tooltip. Double-tap: rename. Hold 1.5s: delete. Drag: move. ► layer  ◄ items  ▼ menu';
+const TOUCH_INSTRUCTIONS = 'Tap: tooltip. Double-tap: edit. Hold 1.5s: delete. Drag: move. ► layer  ◄ items  ▼ menu';
+const DESKTOP_INSTRUCTIONS = 'Click: edit. Right-click: delete. Hover: tooltip.';
 let statusRevertTimer = null;
 function setStatus(m) {
   statusBar.textContent = m;
   if (statusRevertTimer) { clearTimeout(statusRevertTimer); statusRevertTimer = null; }
-  // On touch, any action-outcome message reverts back to the instructional
-  // text after 3s of no further status updates. Setting the instructional
-  // text itself doesn't re-arm the timer, so it doesn't loop pointlessly.
-  if (isTouch() && m !== TOUCH_INSTRUCTIONS) {
+  // Any action-outcome message reverts back to the instructional text after 3s
+  // of no further status updates, on touch and desktop alike. Setting the
+  // instructional text itself doesn't re-arm the timer, so it doesn't loop.
+  const instructions = isTouch() ? TOUCH_INSTRUCTIONS : DESKTOP_INSTRUCTIONS;
+  if (m !== instructions) {
     statusRevertTimer = setTimeout(() => {
-      statusBar.textContent = TOUCH_INSTRUCTIONS;
+      statusBar.textContent = instructions;
       statusRevertTimer = null;
     }, 3000);
   }
@@ -1349,14 +1351,6 @@ function doUndo() {
       restoreBaseHeights(entry.baseHeights);
       undoMsg = `Undid drag of ${name}`;
     }
-  } else if (entry.type === 'name') {
-    const item = items.find(i => i.id === entry.id);
-    if (item) {
-      const newName = getItemName(item); // name it currently has, before reverting
-      item.name = entry.oldName;
-      const oldName = getItemName(item); // re-read via the same helper so the "no custom name" fallback applies consistently
-      undoMsg = `Undid rename of ${oldName} to ${newName}`;
-    }
   } else if (entry.type === 'commit') {
     const item = items.find(i => i.id === entry.id);
     if (item) { item.planned = true; undoMsg = `Undid ${getItemName(item)}`; }
@@ -2014,9 +2008,7 @@ applyRoomSize();
 rebuildSlider();
 layerFeet = room.h; slider.value = slider.max;
 renderAllItems(); renderItemList(); renderPresets();
-setStatus(isTouch()
-  ? TOUCH_INSTRUCTIONS
-  : 'Click: rename. Right-click: delete. Hover: tooltip.');
+setStatus(isTouch() ? TOUCH_INSTRUCTIONS : DESKTOP_INSTRUCTIONS);
 
 // Attempt session recovery
 tryRecoverSnapshot();
@@ -2025,9 +2017,7 @@ tryRecoverSnapshot();
 // behavior, see sw.js). Registration failing here is non-fatal -- the app
 // still works, it just won't be installable as a PWA until this succeeds.
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {
-    setStatus('Service worker registration failed -- app still works, just not installable yet.');
-  });
+  navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker registration failed:', err));
 }
 </script>
 </body>
