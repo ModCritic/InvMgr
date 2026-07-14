@@ -45,8 +45,8 @@
   }
   #top-bar button:hover { background: #484848; }
   #set-room-btn { background: #3a4a3a; }
-  #floor-collision-btn { background: #383838; }
-  #floor-collision-btn.active { background: #4a3620; border-color: #c88a3a; color: #f0b060; }
+  #layer-collision-btn { background: #383838; }
+  #layer-collision-btn.active { background: #4a3620; border-color: #c88a3a; color: #f0b060; }
   .row-break { display: none; } /* only becomes a line-break on touch, see media query below */
 
   /* The always-visible island: add, undo, menu-toggle, fit */
@@ -121,6 +121,7 @@
     .modal-row label { font-size: 16px; }
     .modal-row input[type=number], .modal-row input[type=text] { font-size: 16px; padding: 8px 8px; width: 110px; }
     .modal-row input[type=text] { width: 180px; }
+    .modal-row textarea { font-size: 16px; padding: 8px 8px; }
     .modal-btns button { font-size: 16px; padding: 10px 20px; }
     .list-entry { font-size: 15px; padding: 9px 10px; }
     #list-panel h3 { font-size: 14px; padding: 8px 10px; }
@@ -271,6 +272,21 @@
   .list-entry.planned:hover { background: #252525; }
   .list-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
+  /* Dragging a planned item out of the list to commit it */
+  .list-entry.collapsing {
+    transition: height 0.22s ease, padding-top 0.22s ease, padding-bottom 0.22s ease,
+                border-bottom-width 0.22s ease, opacity 0.22s ease;
+  }
+  .drag-ghost {
+    position: fixed; z-index: 100000; pointer-events: none;
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; font-size: 12px; font-family: monospace; color: #ddd;
+    background: #2a2a2a; border: 1px solid #555; border-radius: 8px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+    opacity: 1; will-change: transform, opacity;
+  }
+  .drag-ghost.over-canvas { opacity: 0.8; }
+
   /* Planning mode button — desktop top-bar */
   #plan-btn { background: #303030; }
   #plan-btn.active { background: #4a2e50; border-color: #b06dc8; color: #d9a0ee; }
@@ -338,6 +354,20 @@
     padding: 4px 6px; font-family: monospace; font-size: 13px;
   }
   .modal-row input[type=text] { width: 160px; }
+
+  /* Name field on Add Item / Edit Item: starts at the original width and
+     grows horizontally with content (native field-sizing, no JS needed to
+     measure anything) up to a cap, then wraps and grows downward instead. */
+  .modal-row.name-row { align-items: flex-start; }
+  .modal-row.name-row label { padding-top: 5px; }
+  .modal-row textarea {
+    flex: 0 1 auto; resize: none; overflow-y: auto;
+    background: #1a1a1a; border: 1px solid #555; color: #ddd;
+    padding: 4px 6px; font-family: monospace; font-size: 13px; line-height: 1.4;
+    overflow-wrap: break-word;
+    field-sizing: content;
+    min-inline-size: 160px; max-inline-size: min(80vw, 560px); max-block-size: 40vh;
+  }
   .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
   .modal-btns button {
     background: #383838; border: 1px solid #555; color: #ccc; padding: 5px 14px;
@@ -354,9 +384,12 @@
     border-top: 1px solid #333; flex-shrink: 0;
   }
 
-  /* shared backdrop for all drawers */
+  /* shared backdrop for all drawers — visual/click-catch only, never blocks
+     touch/pointer events (a drawer being open shouldn't stop panning the
+     canvas that's still visible around it) */
   #drawer-backdrop {
     display: none; position: absolute; inset: 0; z-index: 190; background: transparent;
+    pointer-events: none;
   }
   #drawer-backdrop.visible { display: block; }
 </style>
@@ -371,7 +404,7 @@
     <label><span id="room-h-label">H(ft):</span><input type="number" id="room-h" value="8"  min="1" max="50"  step="0.5"></label>
     <div class="row-break"></div>
     <button id="set-room-btn">Set Room</button>
-    <button id="floor-collision-btn" title="Floor items block each other instead of stacking">Floor Collision</button>
+    <button id="layer-collision-btn" title="Items keep their current layer instead of stacking or falling">Layer Collision</button>
     <div class="row-break"></div>
     <button id="save-btn">Save</button>
     <button id="load-btn">Load</button>
@@ -436,7 +469,7 @@
       <span>Add Item</span><span class="presets-label">| Presets:</span>
       <div id="preset-row"></div>
     </div>
-    <div class="modal-row"><label>Name:</label><input type="text" id="new-name" placeholder="Leave blank for default"></div>
+    <div class="modal-row name-row"><label>Name:</label><textarea id="new-name" rows="1" placeholder="Leave blank for default"></textarea></div>
     <div class="modal-row"><label id="new-w-label">Width (in):</label><input type="number" id="new-w" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-row"><label id="new-l-label">Length (in):</label><input type="number" id="new-l" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-row"><label id="new-h-label">Height (in):</label><input type="number" id="new-h" value="12" min="1" max="1000" step="0.5"></div>
@@ -467,7 +500,7 @@
   <div class="modal-box" style="position:relative">
     <button id="name-swap-btn" title="Swap Width and Length" style="position:absolute;top:12px;right:12px;background:#383838;border:1px solid #555;color:#ccc;font-family:monospace;font-size:13px;padding:2px 7px;cursor:pointer;touch-action:manipulation;" onmouseenter="this.style.background='#484848'" onmouseleave="this.style.background='#383838'">&#x21BB;</button>
     <h2>Edit Item</h2>
-    <div class="modal-row"><label>Name:</label><input type="text" id="name-input" placeholder="Leave blank for default"></div>
+    <div class="modal-row name-row"><label>Name:</label><textarea id="name-input" rows="1" placeholder="Leave blank for default"></textarea></div>
     <div class="modal-row"><label id="name-w-label">Width (in):</label><input type="number" id="name-w" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-row"><label id="name-l-label">Length (in):</label><input type="number" id="name-l" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-row"><label id="name-h-label">Height (in):</label><input type="number" id="name-h" value="12" min="1" max="1000" step="0.5"></div>
@@ -503,7 +536,7 @@ let layerFeet        = room.h;
 let fitMode          = false;
 let planMode         = false;
 let metricMode       = false;
-let floorCollision   = false;
+let layerCollision   = false;
 let presets          = [null, null, null]; // each: null (empty slot) or {name, w_in, l_in, h_in}
 let editingPresetIndex = null;
 
@@ -605,7 +638,11 @@ sliderToggle.addEventListener('click', () => {
 listToggle.addEventListener('click', () => {
   listPanel.classList.contains('open') ? closeAnyDrawer() : openDrawer(listPanel, listToggle);
 });
-drawerBackdrop.addEventListener('click', closeAnyDrawer);
+// The backdrop no longer intercepts events (see its CSS) so the "tap outside
+// closes the drawer" behavior lives on the canvas instead — a real tap still
+// closes it, but a drag/pan gesture never fires 'click' at all, so panning
+// the visible canvas while a drawer is open works normally now.
+canvasWrap.addEventListener('click', () => { if (openDrawerEl) closeAnyDrawer(); });
 
 // ════════════════════════════════════════════════════
 // Top bar collapse (touch ▼/▲ toggle)
@@ -859,6 +896,11 @@ function rectsOverlap(a, b) {
 // Cascading topo base-height recompute
 // ════════════════════════════════════════════════════
 function recomputeAllBaseHeights() {
+  // Layer Collision means no item's base height changes for any reason while
+  // it's active — dragging, adding, deleting, swapping, all of it. Everything
+  // "falls" back into physically-correct stacking in one pass when the mode
+  // is turned off (see toggleLayerCollision), not continuously while it's on.
+  if (layerCollision) return;
   // Planned items aren't really "in the room" yet — they must never act as
   // stacking obstacles for other items, nor receive a base height of their own.
   const sorted = items.filter(it => !it.planned).sort((a, b) => a.dragOrder - b.dragOrder);
@@ -877,7 +919,41 @@ function recomputeAllBaseHeights() {
   }
 }
 
-function zIndexFor(item) { return 100 + item.dragOrder; }
+// Bottom-up "gravity" settle used specifically when Layer Collision turns off.
+// The normal recompute above uses dragOrder — "whichever item you last moved
+// stacks on top" — which is right for ordinary drag-to-stack, but wrong here:
+// during Layer Collision an item's position has nothing to do with when it
+// was last dragged, so dragOrder doesn't tell you who's really resting on
+// whom. This sorts by each item's CURRENT (about-to-unfreeze) height instead,
+// processing lowest-first, so by the time a taller item settles, whatever it
+// sits on has already found its own true resting height — multi-item
+// cascades (something shrinks, everything stacked above it drops in turn)
+// resolve correctly in one pass.
+function settleAllBaseHeights() {
+  const sorted = items.filter(it => !it.planned).sort((a, b) => a.baseHeight_in - b.baseHeight_in);
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i], cr = itemRect(cur);
+    let maxTop = 0;
+    for (let j = 0; j < i; j++) {
+      const prev = sorted[j];
+      if (rectsOverlap(cr, itemRect(prev))) {
+        const top = prev.baseHeight_in + prev.h_in;
+        if (top > maxTop) maxTop = top;
+      }
+    }
+    cur.baseHeight_in = maxTop;
+  }
+}
+
+function zIndexFor(item) {
+  // Normally the most-recently-dragged item renders on top, matching the
+  // usual "I just placed this, it's on top" intuition. During Layer
+  // Collision that intuition doesn't hold — items can be repositioned at any
+  // frozen height without stacking — so paint order should instead reflect
+  // actual physical height, same as it will once things settle.
+  if (layerCollision) return 100 + Math.round(item.baseHeight_in * 10);
+  return 100 + item.dragOrder;
+}
 function isVisible(item) { return item.baseHeight_in < layerFeet * 12; }
 
 function renderAllItems() {
@@ -893,9 +969,11 @@ function renderAllItems() {
     el.style.display = isVisible(item) ? 'block' : 'none';
     el.style.zIndex  = zIndexFor(item);
     el.classList.toggle('selected', item.id === selectedId);
-    // Dim items stacked above the selected item (higher dragOrder + overlapping)
+    // Dim items stacked above the selected item — by actual height during
+    // Layer Collision (matching the new height-based z-index), by dragOrder
+    // otherwise (matching the normal "later stacks on top" behavior)
     const shouldDim = selItem && !item.planned &&
-                      item.dragOrder > selDragOrder &&
+                      (layerCollision ? item.baseHeight_in > selItem.baseHeight_in : item.dragOrder > selDragOrder) &&
                       rectsOverlap(itemRect(item), itemRect(selItem));
     el.classList.toggle('dim-above', shouldDim);
   });
@@ -1001,7 +1079,7 @@ function hideTooltip() {
 // Slides `from` toward `to` along one axis, stopping at the exact point where
 // the moving edge would touch the nearest blocking obstacle — a closed-form
 // swept check, not a handful of discrete candidate positions. This is what
-// makes Floor Collision reach the true contact edge on every drag regardless
+// makes Layer Collision reach the true contact edge on every drag regardless
 // of how big a jump a single mousemove/touchmove frame happens to cover.
 function slideAxis(from, to, size, crossFrom, crossSize, obstacles, axis) {
   if (to === from) return from;
@@ -1026,16 +1104,32 @@ function clampItem(item, nx, ny) {
   const cx = Math.round(Math.max(0, Math.min(feetToPx(room.w) - inchesToPx(item.w_in), nx)));
   const cy = Math.round(Math.max(0, Math.min(feetToPx(room.l) - inchesToPx(item.l_in), ny)));
 
-  // Floor Collision only constrains items currently resting on the floor (base 0in),
-  // and only against other floor items — anything stacked above is unaffected.
-  if (!floorCollision || item.baseHeight_in !== 0) return { nx: cx, ny: cy };
+  if (!layerCollision) return { nx: cx, ny: cy };
 
+  // Obstacle = any other item whose height range [base, base+h] overlaps this
+  // item's own height range — i.e. the two would physically collide in 3D if
+  // their footprints touched, regardless of which one has the lower base.
+  // That's what lets a dragged item slide past something short (no vertical
+  // overlap, footprint doesn't matter) while still being blocked by something
+  // whose top reaches into its own height band even from a lower base.
+  //
+  // Exception: an obstacle that touches this item's height range with ZERO
+  // gap in EITHER direction (this item's base sits exactly on the obstacle's
+  // top, OR this item's top sits exactly on the obstacle's base) is a clean
+  // stack, not a collision — two boxes flush against each other don't
+  // interpenetrate. Only a genuine overlap (a real, non-zero span in common)
+  // still blocks.
+  const EPS = 1e-3;
   const wPx = inchesToPx(item.w_in), lPx = inchesToPx(item.l_in);
+  const itemTop = item.baseHeight_in + item.h_in;
   const obstacles = items
-    .filter(it => it.id !== item.id && !it.planned && it.baseHeight_in === 0)
+    .filter(it => it.id !== item.id && !it.planned)
+    .filter(it => it.baseHeight_in <= itemTop && it.baseHeight_in + it.h_in >= item.baseHeight_in)
+    .filter(it => Math.abs((it.baseHeight_in + it.h_in) - item.baseHeight_in) > EPS &&
+                  Math.abs((item.baseHeight_in + item.h_in) - it.baseHeight_in) > EPS)
     .map(itemRect);
 
-  // If the starting position is already invalid (e.g. Floor Collision was just
+  // If the starting position is already invalid (e.g. Layer Collision was just
   // switched on over an existing overlap), don't fight it — just apply room bounds.
   if (obstacles.some(o => rectsOverlap(itemRect(item), o))) return { nx: cx, ny: cy };
 
@@ -1220,16 +1314,18 @@ function makeUndoMoveSnap(item) {
 }
 
 // ════════════════════════════════════════════════════
-// Find an open spot for a newly placed item — searches outward from
-// room-center in item-sized rings, nearest first. Falls back to dead-center
-// (allowing overlap/stacking, same as before) if the room is fully packed.
+// Find an open spot for a newly placed item — searches outward from a
+// preferred position (room-center by default) in item-sized rings, nearest
+// first. Falls back to dead-center (allowing overlap/stacking, same as
+// before) if the room is fully packed.
 // ════════════════════════════════════════════════════
-function findOpenSpot(w_in, l_in) {
+function findOpenSpot(w_in, l_in, preferredX, preferredY) {
   const wPx = inchesToPx(w_in), lPx = inchesToPx(l_in);
   const roomWPx = feetToPx(room.w), roomLPx = feetToPx(room.l);
   const clampX = x => Math.round(Math.max(0, Math.min(roomWPx - wPx, x)));
   const clampY = y => Math.round(Math.max(0, Math.min(roomLPx - lPx, y)));
-  const defX = clampX((roomWPx - wPx) / 2), defY = clampY((roomLPx - lPx) / 2);
+  const defX = clampX(preferredX !== undefined && preferredX !== null ? preferredX : (roomWPx - wPx) / 2);
+  const defY = clampY(preferredY !== undefined && preferredY !== null ? preferredY : (roomLPx - lPx) / 2);
 
   const obstacles = items.filter(it => !it.planned).map(itemRect);
   const rectAt = (x, y) => ({ x, y, x2: x + wPx, y2: y + lPx });
@@ -1307,10 +1403,10 @@ function deleteItem(id) {
 // ════════════════════════════════════════════════════
 // Commit planned item to the room
 // ════════════════════════════════════════════════════
-function commitPlannedItem(id) {
+function commitPlannedItem(id, preferredX, preferredY) {
   const item = items.find(i => i.id === id); if (!item || !item.planned) return;
-  // Find an open spot now that it's being placed for real, instead of always the dead center
-  const spot = findOpenSpot(item.w_in, item.l_in);
+  // Find an open spot near the preferred position (or room center if none given)
+  const spot = findOpenSpot(item.w_in, item.l_in, preferredX, preferredY);
   item.x_px = spot.x; item.y_px = spot.y;
   item.planned = false;
   // Update the DOM element position and make it visible
@@ -1410,13 +1506,15 @@ let namingItemId = null;
 function openNameDialog(id) {
   namingItemId = id;
   const item = items.find(i => i.id === id);
-  document.getElementById('name-input').value = item ? item.name : '';
+  const nameEl = document.getElementById('name-input');
+  nameEl.value = item ? item.name : '';
   if (item) {
     document.getElementById('name-w').value = round3(metricMode ? inToCm(item.w_in) : item.w_in);
     document.getElementById('name-l').value = round3(metricMode ? inToCm(item.l_in) : item.l_in);
     document.getElementById('name-h').value = round3(metricMode ? inToCm(item.h_in) : item.h_in);
   }
   document.getElementById('name-dialog').style.display = 'flex';
+  autoGrowTextarea(nameEl); // must run after display:flex — scrollHeight reads as 0 while hidden
   setTimeout(() => document.getElementById('name-input').focus(), 80);
   selectItem(id);
 }
@@ -1472,7 +1570,7 @@ document.getElementById('name-delete').addEventListener('click', () => {
   if (id) deleteItem(id);
 });
 document.getElementById('name-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter')  document.getElementById('name-confirm').click();
+  if (e.key === 'Enter')  { e.preventDefault(); document.getElementById('name-confirm').click(); }
   if (e.key === 'Escape') document.getElementById('name-cancel').click();
 });
 
@@ -1507,9 +1605,11 @@ document.getElementById('name-swap-btn').addEventListener('click', () => {
 // Add item dialog
 // ════════════════════════════════════════════════════
 function openAddDialog() {
-  document.getElementById('new-name').value = ''; // reset per-open; dimensions stay remembered
+  const nameEl = document.getElementById('new-name');
+  nameEl.value = ''; // reset per-open; dimensions stay remembered
   document.getElementById('add-dialog').style.display = 'flex';
-  setTimeout(() => document.getElementById('new-name').focus(), 50);
+  autoGrowTextarea(nameEl); // must run after display:flex — scrollHeight reads as 0 while hidden
+  setTimeout(() => nameEl.focus(), 50);
 }
 document.getElementById('add-item-btn').addEventListener('click', openAddDialog);
 document.getElementById('island-add').addEventListener('click', openAddDialog);
@@ -1533,7 +1633,7 @@ document.getElementById('add-confirm').addEventListener('click', () => {
   addItem(w, l, h, name);
 });
 document.getElementById('new-name').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('new-w').focus();
+  if (e.key === 'Enter')  { e.preventDefault(); document.getElementById('new-w').focus(); }
   if (e.key === 'Escape') document.getElementById('add-cancel').click();
 });
 document.getElementById('new-h').addEventListener('keydown', e => {
@@ -1548,6 +1648,21 @@ function limitTo3Decimals(e) {
 }
 ['new-w', 'new-l', 'new-h', 'name-w', 'name-l', 'name-h', 'preset-w', 'preset-l', 'preset-h'].forEach(id => {
   document.getElementById(id).addEventListener('input', limitTo3Decimals);
+});
+
+// Name field width/height is handled natively by field-sizing:content in
+// supported browsers (Chromium 123+, so Brave included) — this JS is purely
+// a fallback for browsers that don't support it yet, where the textarea
+// still grows downward as content wraps, just without the JS having to do
+// anything when the CSS already handles it.
+const supportsFieldSizing = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('field-sizing', 'content');
+function autoGrowTextarea(el) {
+  if (supportsFieldSizing) return;
+  el.style.height = 'auto'; // shrink first so scrollHeight reflects current content, not the old height
+  el.style.height = el.scrollHeight + 'px';
+}
+['new-name', 'name-input'].forEach(id => {
+  document.getElementById(id).addEventListener('input', e => autoGrowTextarea(e.target));
 });
 
 // ════════════════════════════════════════════════════
@@ -1720,6 +1835,162 @@ itemSearchClearEl.addEventListener('click', () => {
 // ════════════════════════════════════════════════════
 // Item list panel
 // ════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════
+// Drag a planned item out of the list to commit it into the room
+// ════════════════════════════════════════════════════
+const DRAG_ROW_THRESHOLD = 6; // px of movement before a touch/click on a row counts as a drag
+const dragGhostEl = document.createElement('div');
+dragGhostEl.className = 'drag-ghost';
+dragGhostEl.style.display = 'none';
+document.body.appendChild(dragGhostEl);
+
+function wirePlannedRowDrag(div, item) {
+  let startX = 0, startY = 0, startTime = 0, dragging = false, lastX = 0, directionLocked = null;
+  let rowNaturalHeight = 0, ghostOffsetX = 0, ghostOffsetY = 0, lastTapTime = 0;
+
+  function pointFromEvent(e) {
+    if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    return { x: e.clientX, y: e.clientY };
+  }
+  function isOverCanvas(x, y) {
+    const el = document.elementFromPoint(x, y);
+    return !!(el && canvasWrap.contains(el));
+  }
+
+  function beginDrag(x, y) {
+    dragging = true;
+    lastTapTime = 0;
+    const r = div.getBoundingClientRect();
+    ghostOffsetX = x - r.left; ghostOffsetY = y - r.top;
+    lastX = x;
+
+    // Ghost shows exactly what the row currently shows
+    dragGhostEl.innerHTML = '';
+    const dot = document.createElement('div');
+    dot.className = 'list-color-dot'; dot.style.background = item.color;
+    const span = document.createElement('span');
+    span.textContent = getItemName(item) + ' [plan]';
+    dragGhostEl.appendChild(dot); dragGhostEl.appendChild(span);
+    dragGhostEl.style.width = r.width + 'px';
+    dragGhostEl.style.left = r.left + 'px';
+    dragGhostEl.style.top  = r.top + 'px';
+    dragGhostEl.style.transform = 'rotate(0deg)';
+    dragGhostEl.classList.remove('over-canvas');
+    dragGhostEl.style.display = 'flex';
+
+    // Collapse the source row so the list closes the gap immediately, like
+    // the item was physically lifted out of it
+    rowNaturalHeight = div.offsetHeight;
+    div.style.height = rowNaturalHeight + 'px';
+    div.getBoundingClientRect(); // force a reflow so the pinned height registers first
+    div.classList.add('collapsing');
+    requestAnimationFrame(() => {
+      div.style.height = '0px';
+      div.style.paddingTop = '0px'; div.style.paddingBottom = '0px';
+      div.style.borderBottomWidth = '0px';
+      div.style.opacity = '0';
+    });
+  }
+
+  function moveDrag(x, y) {
+    const tiltDeg = Math.max(-16, Math.min(16, (x - lastX) * 1.4));
+    lastX = x;
+    dragGhostEl.style.left = (x - ghostOffsetX) + 'px';
+    dragGhostEl.style.top  = (y - ghostOffsetY) + 'px';
+    dragGhostEl.style.transform = `rotate(${tiltDeg}deg)`;
+    dragGhostEl.classList.toggle('over-canvas', isOverCanvas(x, y));
+  }
+
+  function endDrag(x, y) {
+    if (!dragging) { directionLocked = null; return; }
+    dragging = false; directionLocked = null;
+    dragGhostEl.style.display = 'none';
+
+    if (isOverCanvas(x, y)) {
+      const canvasRect = canvas.getBoundingClientRect();
+      const scale = canvasRect.width / feetToPx(room.w);
+      const wPx = inchesToPx(item.w_in), lPx = inchesToPx(item.l_in);
+      const dropX = (x - canvasRect.left) / scale - wPx / 2;
+      const dropY = (y - canvasRect.top)  / scale - lPx / 2;
+      commitPlannedItem(item.id, dropX, dropY); // this re-renders the whole list, cleaning up the row
+    } else {
+      // Dropped outside the room — cancel, restore the row
+      div.classList.remove('collapsing');
+      div.style.height = rowNaturalHeight + 'px';
+      div.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        div.style.height = '';
+        div.style.paddingTop = ''; div.style.paddingBottom = '';
+        div.style.borderBottomWidth = ''; div.style.opacity = '';
+      });
+    }
+  }
+
+  // Mouse
+  div.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    startX = e.clientX; startY = e.clientY; directionLocked = null;
+    const onMove = e2 => {
+      const p = pointFromEvent(e2);
+      if (directionLocked === null) {
+        const dx = p.x - startX, dy = p.y - startY;
+        if (Math.abs(dx) > DRAG_ROW_THRESHOLD || Math.abs(dy) > DRAG_ROW_THRESHOLD) {
+          directionLocked = Math.abs(dx) > Math.abs(dy) ? 'drag' : 'other';
+          if (directionLocked === 'drag') beginDrag(startX, startY);
+        }
+      }
+      if (dragging) moveDrag(p.x, p.y);
+    };
+    const onUp = e2 => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const p = pointFromEvent(e2);
+      endDrag(p.x, p.y);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  div.addEventListener('dblclick', () => openNameDialog(item.id));
+
+  // Touch — mostly-horizontal movement drags the item out; mostly-vertical
+  // movement is left alone so the list can still be scrolled normally.
+  div.addEventListener('touchstart', e => {
+    const p = pointFromEvent(e);
+    startX = p.x; startY = p.y; startTime = Date.now(); directionLocked = null;
+  }, { passive: true });
+  div.addEventListener('touchmove', e => {
+    const p = pointFromEvent(e);
+    if (directionLocked === null) {
+      const dx = p.x - startX, dy = p.y - startY;
+      if (Math.abs(dx) > DRAG_ROW_THRESHOLD || Math.abs(dy) > DRAG_ROW_THRESHOLD) {
+        directionLocked = Math.abs(dx) > Math.abs(dy) ? 'drag' : 'scroll';
+        if (directionLocked === 'drag') beginDrag(startX, startY);
+      }
+    }
+    if (directionLocked === 'drag') { e.preventDefault(); moveDrag(p.x, p.y); }
+    // directionLocked === 'scroll' -> do nothing, let the browser scroll the list
+  }, { passive: false });
+  div.addEventListener('touchend', e => {
+    const p = pointFromEvent(e);
+    if (dragging) {
+      e.preventDefault();
+      endDrag(p.x, p.y);
+    } else if (directionLocked === null && Date.now() - startTime < 500) {
+      // A brief tap with no meaningful movement in either direction — check for double-tap
+      e.preventDefault();
+      const now = Date.now();
+      if (lastTapTime > 0 && now - lastTapTime < 400) {
+        lastTapTime = 0;
+        openNameDialog(item.id);
+      } else {
+        lastTapTime = now;
+      }
+    }
+  }, { passive: false });
+  div.addEventListener('touchcancel', () => { lastTapTime = 0; endDrag(lastX, -1); }, { passive: true }); // -1 y is never over the canvas -> cancels
+}
+
 function renderItemList() {
   itemListEl.innerHTML = '';
   const tokens = getSearchTokens();
@@ -1754,21 +2025,8 @@ function renderItemList() {
         document.getElementById('item-' + item.id)?.scrollIntoView({ behavior:'smooth', block:'nearest' });
       });
     } else {
-      // Planned items: double-click (mouse) or 1s hold (touch) to commit to room
-      // Mouse double-click
-      div.addEventListener('dblclick', () => commitPlannedItem(item.id));
-
-      // Touch 1s hold
-      let holdTimer = null;
-      div.addEventListener('touchstart', () => {
-        holdTimer = setTimeout(() => { holdTimer = null; commitPlannedItem(item.id); }, 1000);
-      }, { passive: true });
-      div.addEventListener('touchend', () => {
-        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-      }, { passive: true });
-      div.addEventListener('touchcancel', () => {
-        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-      }, { passive: true });
+      // Planned items: drag out of the list and drop in the room to commit
+      wirePlannedRowDrag(div, item);
     }
 
     itemListEl.appendChild(div);
@@ -1799,20 +2057,28 @@ document.getElementById('set-room-btn').addEventListener('click', () => {
 });
 
 // ════════════════════════════════════════════════════
-// Floor Collision
+// Layer Collision
 // ════════════════════════════════════════════════════
-function toggleFloorCollision() {
-  floorCollision = !floorCollision;
-  document.getElementById('floor-collision-btn').classList.toggle('active', floorCollision);
-  setStatus(floorCollision ? 'Floor Collision ON — floor items block each other.' : 'Floor Collision OFF.');
+function toggleLayerCollision() {
+  layerCollision = !layerCollision;
+  document.getElementById('layer-collision-btn').classList.toggle('active', layerCollision);
+  if (!layerCollision) {
+    // Turning off: let everything fall/settle into its correct physical base
+    // height now, in one pass — using actual current heights, not dragOrder.
+    settleAllBaseHeights();
+    rebuildSlider();
+    renderAllItems();
+    renderItemList();
+  }
+  setStatus(layerCollision ? 'Layer Collision ON — items keep their current layer.' : 'Layer Collision OFF — items settled to their correct layer.');
 }
-document.getElementById('floor-collision-btn').addEventListener('click', toggleFloorCollision);
+document.getElementById('layer-collision-btn').addEventListener('click', toggleLayerCollision);
 
 // ════════════════════════════════════════════════════
 // Save / Load
 // ════════════════════════════════════════════════════
 function buildSavePayload() {
-  return JSON.stringify({ room, items, itemCounter, dragOrderCounter, layerFeet, planMode, metricMode, floorCollision, presets }, null, 2);
+  return JSON.stringify({ room, items, itemCounter, dragOrderCounter, layerFeet, planMode, metricMode, layerCollision, presets }, null, 2);
 }
 
 document.getElementById('save-btn').addEventListener('click', () => {
@@ -1913,9 +2179,10 @@ function loadState(state) {
   document.getElementById('units-btn')?.classList.toggle('active', metricMode);
   document.getElementById('island-units')?.classList.toggle('active', metricMode);
 
-  // Restore Floor Collision if saved
-  floorCollision = state.floorCollision === true;
-  document.getElementById('floor-collision-btn')?.classList.toggle('active', floorCollision);
+  // Restore Layer Collision if saved (falls back to the old "floorCollision"
+  // key so save files from before the rename still restore correctly)
+  layerCollision = state.layerCollision === true || state.floorCollision === true;
+  document.getElementById('layer-collision-btn')?.classList.toggle('active', layerCollision);
 
   // Restore presets if saved, validating each slot the same defensive way items are validated
   const rawPresets = Array.isArray(state.presets) ? state.presets.slice(0, 50) : [];
