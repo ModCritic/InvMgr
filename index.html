@@ -123,8 +123,12 @@
     .modal-row input[type=text] { width: 180px; }
     .modal-row textarea { font-size: 16px; padding: 8px 8px; }
     .modal-btns button { font-size: 16px; padding: 10px 20px; }
+    .id-field-label { font-size: 13px; }
+    .id-field-label input { font-size: 16px; padding: 6px 6px; width: 90px; }
     .list-entry { font-size: 15px; padding: 9px 10px; }
-    #list-panel h3 { font-size: 14px; padding: 8px 10px; }
+    #list-header { padding: 8px 10px; }
+    #list-panel h3 { font-size: 14px; }
+    #list-export-btn { width: 26px; height: 26px; font-size: 15px; }
     #item-search { font-size: 16px; padding: 7px 8px; }
     #item-search-clear { font-size: 16px; padding: 5px 10px; }
     #status-bar { font-size: 13px; padding: 5px 12px; }
@@ -154,13 +158,17 @@
     #slider-toggle { display: flex !important; }
   }
   #slider-toggle {
-    display: none;
+    display: none; align-items: center; justify-content: center;
     position: absolute; left: 0; top: 50%; transform: translateY(-50%);
     z-index: 210; background: #303030; border: 1px solid #555;
-    border-left: none; color: #aaa; font-size: 16px; padding: 10px 6px;
+    border-left: none; color: #aaa; font-size: 16px; padding: 3px;
+    width: 27px; height: 36px; /* fixed box (matches the old content+padding
+      footprint exactly) so the icon can be enlarged without growing the
+      button — also makes the open-state arrow glyph render at the same box
+      size instead of it being whatever size the character happens to be */
     cursor: pointer; touch-action: manipulation; line-height: 1;
     border-radius: 0 4px 4px 0; transition: left 0.22s ease;
-    /* default label: ► */
+    /* default icon shown closed; swaps to ► glyph when open, see closeAnyDrawer/openDrawer */
   }
   #slider-toggle.open { left: 58px; }
   #slider-drawer label { font-size: 10px; color: #888; margin-bottom: 4px; }
@@ -236,15 +244,27 @@
     #list-toggle { display: flex !important; }
   }
   #list-toggle {
-    display: none;
+    display: none; align-items: center; justify-content: center;
     position: absolute; right: 0; top: 50%; transform: translateY(-50%);
     z-index: 210; background: #303030; border: 1px solid #555;
-    border-right: none; color: #aaa; font-size: 16px; padding: 10px 6px;
+    border-right: none; color: #aaa; font-size: 16px; padding: 3px;
+    width: 27px; height: 36px; /* fixed box, see slider-toggle for why */
     cursor: pointer; touch-action: manipulation; line-height: 1;
     border-radius: 4px 0 0 4px; transition: right 0.22s ease;
   }
   #list-toggle.open { right: 200px; }
-  #list-panel h3 { font-size: 12px; padding: 6px 8px; border-bottom: 1px solid #444; color: #aaa; font-weight: normal; }
+  #list-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 6px 8px; border-bottom: 1px solid #444;
+  }
+  #list-panel h3 { font-size: 12px; color: #aaa; font-weight: normal; }
+  #list-export-btn {
+    background: #303030; border: 1px solid #555; color: #999; cursor: pointer;
+    font-family: monospace; font-size: 13px; width: 20px; height: 20px; padding: 0;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+    touch-action: manipulation; flex-shrink: 0;
+  }
+  #list-export-btn:hover { background: #484848; color: #ccc; }
   #list-search-wrap {
     display: flex; align-items: center; gap: 4px; padding: 6px 8px;
     border-bottom: 1px solid #333; flex-shrink: 0;
@@ -378,6 +398,13 @@
   .modal-btns button.confirm:hover { background: #3e6e5e; }
   .modal-btns button.danger { background: #5a2020; border-color: #833; }
   .modal-btns button.danger:hover { background: #7a2a2a; }
+  .id-field-label {
+    display: flex; align-items: center; gap: 4px; font-size: 12px; color: #888;
+  }
+  .id-field-label input {
+    width: 70px; background: #1a1a1a; border: 1px solid #555; color: #ddd;
+    padding: 4px 6px; font-family: monospace; font-size: 12px;
+  }
 
   #status-bar {
     font-size: 11px; color: #666; padding: 3px 10px; background: #1a1a1a;
@@ -392,6 +419,62 @@
     pointer-events: none;
   }
   #drawer-backdrop.visible { display: block; }
+
+  /* ══════════════════════════════════════
+     3D VIEW
+  ══════════════════════════════════════ */
+  #threeD-btn { background: #2e3a4e; display: inline-flex; align-items: center; justify-content: center; }
+  #top-wrap, #status-bar { transition: transform 0.35s ease; }
+  body.mode-3d #top-wrap { transform: translateY(-105%); }
+  body.mode-3d #status-bar { transform: translateY(105%); }
+  body.mode-3d #slider-drawer { transform: translateX(-105%); }
+  body.mode-3d #list-panel { transform: translateX(105%); }
+  body.mode-3d #slider-toggle, body.mode-3d #list-toggle { opacity: 0; pointer-events: none; }
+  body.mode-3d-collapsed #top-wrap, body.mode-3d-collapsed #status-bar,
+  body.mode-3d-collapsed #slider-drawer, body.mode-3d-collapsed #list-panel { display: none; }
+  #threeD-overlay {
+    position: fixed; inset: 0; z-index: 5000; background: #181818;
+    opacity: 0; transition: opacity 0.3s ease; touch-action: none; overflow: hidden;
+  }
+  #threeD-overlay.visible { opacity: 1; }
+  #btn-2d {
+    position: absolute; top: 14px; right: 14px; z-index: 10;
+    width: 44px; height: 44px; border-radius: 10px;
+    background: rgba(48,56,56,0.92); border: 1px solid #667; color: #cde;
+    font-family: monospace; font-size: 15px; cursor: pointer;
+    touch-action: manipulation; opacity: 0; transition: opacity 0.4s ease;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #btn-2d.show { opacity: 1; }
+  #btn-2d:hover { background: #3a4a4a; }
+  #joystick-3d {
+    position: absolute; left: 22px; bottom: 26px; z-index: 10;
+    touch-action: none;
+  }
+  #joystick-base {
+    position: relative; width: 108px; height: 108px; border-radius: 50%;
+    background: rgba(48,48,56,0.55); border: 1px solid rgba(120,130,150,0.6);
+  }
+  #joystick-knob {
+    position: absolute; left: 50%; top: 50%; width: 50px; height: 50px;
+    margin: -25px 0 0 -25px; border-radius: 50%;
+    background: rgba(90,100,120,0.85); border: 1px solid #99a;
+    transition: transform 0.15s ease;
+  }
+  #joystick-knob.dragging { transition: none; }
+  #css3d-vp { position: absolute; inset: 0; overflow: hidden; z-index: 1; }
+  #css3d-world {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    transform-style: preserve-3d; will-change: transform;
+  }
+  .f3d {
+    position: absolute; left: 0; top: 0; transform-origin: 0 0;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  }
+  #css3d-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.45) 100%);
+  }
 </style>
 </head>
 <body>
@@ -408,6 +491,7 @@
     <div class="row-break"></div>
     <button id="save-btn">Save</button>
     <button id="load-btn">Load</button>
+    <button id="threeD-btn" title="3D View"><svg viewBox="0 0 128 128" width="1.3em" height="1.3em" aria-hidden="true"><path d="M 64.000001,3.8319592 116.11076,33.91598 64.000001,64.000001 11.889245,33.91598 Z" fill="#ffffff" fill-opacity="1"/><path d="M 116.11076,33.91598 V 94.084021 L 64.000001,124.16804 V 64.000001 Z" fill="#ffffff" fill-opacity="0.35"/><path d="M 11.889245,33.91598 64.000001,64.000001 V 124.16804 L 11.889245,94.084021 Z" fill="#ffffff" fill-opacity="0.65"/></svg></button>
     <input type="file" id="file-input" accept=".json" style="display:none">
     <!-- Desktop-only buttons (hidden on touch via CSS) -->
     <button id="add-item-btn" title="Add Item">&#9632;</button>
@@ -428,10 +512,10 @@
 </div>
 
 <div id="main">
-  <!-- Layer slider toggle (touch: ►, open state shows ◄ via JS) -->
-  <button id="slider-toggle">&#9658;</button>
-  <!-- List panel toggle (touch: ◄, open state shows ► via JS) -->
-  <button id="list-toggle">&#9668;</button>
+  <!-- Layer slider toggle (touch: layerslider icon, open state shows ◄ via JS) -->
+  <button id="slider-toggle" title="Layer slider"><svg viewBox="0 0 128 128" width="20" height="20" aria-hidden="true"><path fill="#ffffff" fill-opacity="0.501537" d="M 51.235402,11.398598 H 82.906967 V 43.070163 H 51.235402 Z"/><path fill="#ffffff" stroke="#ffffff" stroke-width="3" stroke-opacity="0.745072" d="M 34.151948,48.164217 H 88.299166 V 79.835784 H 34.151948 Z"/><path fill="#ffffff" fill-opacity="0.75" d="M 29.781405,84.929838 H 61.45297 V 116.6014 H 29.781405 Z"/><path fill="#ffffff" fill-opacity="0.75" d="M 66.547025,84.929838 H 98.21859 V 116.6014 H 66.547025 Z"/></svg></button>
+  <!-- List panel toggle (touch: itemlist icon, open state shows ► via JS) -->
+  <button id="list-toggle" title="Item list"><svg viewBox="0 0 128 128" width="20" height="20" aria-hidden="true"><line x1="22" y1="36" x2="106" y2="36" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><line x1="22" y1="64" x2="88" y2="64" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><line x1="22" y1="92" x2="96" y2="92" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/></svg></button>
   <!-- Shared backdrop for all drawers -->
   <div id="drawer-backdrop"></div>
 
@@ -450,7 +534,10 @@
 
   <!-- Right list panel (drawer on touch) -->
   <div id="list-panel">
-    <h3>Items</h3>
+    <div id="list-header">
+      <h3>Items</h3>
+      <button id="list-export-btn" title="Export item list as .txt">&#x2913;</button>
+    </div>
     <div id="list-search-wrap">
       <input type="text" id="item-search" placeholder="Search: name, W20, L12, H8..." autocomplete="off">
       <button id="item-search-clear" title="Clear search">&times;</button>
@@ -474,6 +561,7 @@
     <div class="modal-row"><label id="new-l-label">Length (in):</label><input type="number" id="new-l" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-row"><label id="new-h-label">Height (in):</label><input type="number" id="new-h" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-btns">
+      <label class="id-field-label">ID:<input type="text" id="new-id" maxlength="60"></label>
       <button id="add-cancel">Cancel</button>
       <button class="confirm" id="add-confirm">Confirm</button>
     </div>
@@ -506,6 +594,7 @@
     <div class="modal-row"><label id="name-h-label">Height (in):</label><input type="number" id="name-h" value="12" min="1" max="1000" step="0.5"></div>
     <div class="modal-btns">
       <button class="danger" id="name-delete">Delete</button>
+      <label class="id-field-label">ID:<input type="text" id="name-id" maxlength="60"></label>
       <button id="name-cancel">Cancel</button>
       <button class="confirm" id="name-confirm">OK</button>
     </div>
@@ -610,6 +699,12 @@ function round6(n)     { return Math.round(n * 1e6) / 1e6; }
 // ════════════════════════════════════════════════════
 let openDrawerEl = null; // track which drawer is open so backdrop can close it
 
+// Closed-state icons for the two touch-only drawer toggles (same artwork as
+// the buttons' initial HTML). Only the closed state uses these — the open
+// state keeps its directional arrow glyph, set via textContent below.
+const SLIDER_TOGGLE_ICON = '<svg viewBox="0 0 128 128" width="20" height="20" aria-hidden="true"><path fill="#ffffff" fill-opacity="0.501537" d="M 51.235402,11.398598 H 82.906967 V 43.070163 H 51.235402 Z"/><path fill="#ffffff" stroke="#ffffff" stroke-width="3" stroke-opacity="0.745072" d="M 34.151948,48.164217 H 88.299166 V 79.835784 H 34.151948 Z"/><path fill="#ffffff" fill-opacity="0.75" d="M 29.781405,84.929838 H 61.45297 V 116.6014 H 29.781405 Z"/><path fill="#ffffff" fill-opacity="0.75" d="M 66.547025,84.929838 H 98.21859 V 116.6014 H 66.547025 Z"/></svg>';
+const LIST_TOGGLE_ICON = '<svg viewBox="0 0 128 128" width="20" height="20" aria-hidden="true"><line x1="22" y1="36" x2="106" y2="36" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><line x1="22" y1="64" x2="88" y2="64" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><line x1="22" y1="92" x2="96" y2="92" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/></svg>';
+
 function openDrawer(drawerEl, toggleEl) {
   // close whatever is open first
   if (openDrawerEl && openDrawerEl !== drawerEl) closeAnyDrawer();
@@ -625,9 +720,9 @@ function openDrawer(drawerEl, toggleEl) {
 function closeAnyDrawer() {
   if (!openDrawerEl) return;
   openDrawerEl.classList.remove('open');
-  // reset toggles
-  sliderToggle.classList.remove('open'); sliderToggle.textContent = '\u25BA'; // ►
-  listToggle.classList.remove('open');   listToggle.textContent   = '\u25C4'; // ◄
+  // reset toggles to their closed-state icons
+  sliderToggle.classList.remove('open'); sliderToggle.innerHTML = SLIDER_TOGGLE_ICON;
+  listToggle.classList.remove('open');   listToggle.innerHTML   = LIST_TOGGLE_ICON;
   drawerBackdrop.classList.remove('visible');
   openDrawerEl = null;
 }
@@ -1357,7 +1452,7 @@ function findOpenSpot(w_in, l_in, preferredX, preferredY) {
 // ════════════════════════════════════════════════════
 // Add item
 // ════════════════════════════════════════════════════
-function addItem(w_in, l_in, h_in, customName) {
+function addItem(w_in, l_in, h_in, customName, customId) {
   itemCounter++; dragOrderCounter++;
   // clamp dimensions defensively (dialog has max attrs but JS callers should also clamp)
   w_in = Math.max(1, Math.min(1000, w_in));
@@ -1373,7 +1468,8 @@ function addItem(w_in, l_in, h_in, customName) {
   const cy = spot ? spot.y : Math.round(Math.max(0, Math.min(feetToPx(room.l) - inchesToPx(l_in), (feetToPx(room.l) - inchesToPx(l_in)) / 2)));
   const item = { id, serial: itemCounter, dragOrder: dragOrderCounter,
                  w_in, l_in, h_in, x_px: cx, y_px: cy,
-                 color: randColor(), name: (customName || '').trim(), baseHeight_in: 0,
+                 color: randColor(), name: (customName || '').trim(),
+                 customId: (customId || '').trim().slice(0, 60), baseHeight_in: 0,
                  planned };
   items.push(item);
   if (!item.planned) { recomputeAllBaseHeights(); selectedId = item.id; }
@@ -1470,6 +1566,7 @@ function doUndo() {
     const item = items.find(i => i.id === entry.id);
     if (item) {
       item.name = entry.oldName;
+      item.customId = entry.oldCustomId || '';
       item.w_in = entry.w_in; item.l_in = entry.l_in; item.h_in = entry.h_in;
       item.x_px = entry.x_px; item.y_px = entry.y_px;
       const el = document.getElementById('item-' + item.id);
@@ -1512,6 +1609,7 @@ function openNameDialog(id) {
     document.getElementById('name-w').value = round3(metricMode ? inToCm(item.w_in) : item.w_in);
     document.getElementById('name-l').value = round3(metricMode ? inToCm(item.l_in) : item.l_in);
     document.getElementById('name-h').value = round3(metricMode ? inToCm(item.h_in) : item.h_in);
+    document.getElementById('name-id').value = item.customId || '';
   }
   document.getElementById('name-dialog').style.display = 'flex';
   autoGrowTextarea(nameEl); // must run after display:flex — scrollHeight reads as 0 while hidden
@@ -1523,6 +1621,7 @@ document.getElementById('name-confirm').addEventListener('click', () => {
   const item = items.find(i => i.id === namingItemId);
   if (item) {
     const newName = document.getElementById('name-input').value.trim();
+    const newId = document.getElementById('name-id').value.trim().slice(0, 60);
     let w = parseFloat(document.getElementById('name-w').value) || item.w_in;
     let l = parseFloat(document.getElementById('name-l').value) || item.l_in;
     let h = parseFloat(document.getElementById('name-h').value) || item.h_in;
@@ -1534,13 +1633,15 @@ document.getElementById('name-confirm').addEventListener('click', () => {
 
     const nameChanged = newName !== item.name;
     const dimsChanged  = w !== item.w_in || l !== item.l_in || h !== item.h_in;
+    const idChanged    = newId !== item.customId;
 
-    if (nameChanged || dimsChanged) {
-      pushUndo({ type: 'edit', id: item.id, oldName: item.name,
+    if (nameChanged || dimsChanged || idChanged) {
+      pushUndo({ type: 'edit', id: item.id, oldName: item.name, oldCustomId: item.customId,
                  w_in: item.w_in, l_in: item.l_in, h_in: item.h_in,
                  x_px: item.x_px, y_px: item.y_px,
                  baseHeights: items.map(i => ({ id: i.id, b: i.baseHeight_in, d: i.dragOrder })) });
       item.name = newName;
+      item.customId = newId;
       if (dimsChanged) {
         const cx = item.x_px + inchesToPx(item.w_in) / 2;
         const cy = item.y_px + inchesToPx(item.l_in) / 2;
@@ -1629,8 +1730,9 @@ document.getElementById('add-confirm').addEventListener('click', () => {
   // (e.g. 12cm) into slightly-off tooltip displays (11.999cm). 6dp inches is far
   // finer than any cm/mm display grid, so the entered cm value round-trips exactly.
   if (metricMode) { w = round6(cmToIn(w)); l = round6(cmToIn(l)); h = round6(cmToIn(h)); }
+  const customId = document.getElementById('new-id').value;
   document.getElementById('add-dialog').style.display = 'none';
-  addItem(w, l, h, name);
+  addItem(w, l, h, name, customId);
 });
 document.getElementById('new-name').addEventListener('keydown', e => {
   if (e.key === 'Enter')  { e.preventDefault(); document.getElementById('new-w').focus(); }
@@ -1648,6 +1750,18 @@ function limitTo3Decimals(e) {
 }
 ['new-w', 'new-l', 'new-h', 'name-w', 'name-l', 'name-h', 'preset-w', 'preset-l', 'preset-h'].forEach(id => {
   document.getElementById(id).addEventListener('input', limitTo3Decimals);
+});
+
+// Add Item dialog, touch only: select the field's text on focus, matching
+// desktop's native tab-to-select behavior — covers both tapping directly
+// into a field and landing on one via the numeric keyboard's "Next" button,
+// since both fire a normal focus event. setTimeout guards against a mobile
+// Safari quirk where select() can be a no-op if called synchronously inside
+// the focus handler itself.
+['new-w', 'new-l', 'new-h'].forEach(id => {
+  document.getElementById(id).addEventListener('focus', e => {
+    if (isTouch()) setTimeout(() => e.target.select(), 0);
+  });
 });
 
 // Name field width/height is handled natively by field-sizing:content in
@@ -1835,6 +1949,41 @@ itemSearchClearEl.addEventListener('click', () => {
 // ════════════════════════════════════════════════════
 // Item list panel
 // ════════════════════════════════════════════════════
+
+// Export the full item list as plain text. Kept as its own formatter rather
+// than reusing tooltipText() — the export line is a distinct, user-specified
+// format (" | "-delimited, "Base:" capitalized) rather than the on-screen
+// tooltip's compact double-space format, so the two are allowed to diverge.
+// Always exports the complete list regardless of any active search filter,
+// since the button lives on the panel header, not the search row.
+function exportLineFor(item) {
+  let wD, lD, hD, bD, unit;
+  if (metricMode) {
+    wD = round3(inToCm(item.w_in)); lD = round3(inToCm(item.l_in));
+    hD = round3(inToCm(item.h_in)); bD = round3(inToCm(item.baseHeight_in));
+    unit = 'cm';
+  } else {
+    wD = round3(item.w_in); lD = round3(item.l_in);
+    hD = round3(item.h_in); bD = round3(item.baseHeight_in);
+    unit = 'in';
+  }
+  let line = `${getItemName(item)}${item.planned ? ' [plan]' : ''} | ` +
+             `${wD}${unit} W x ${lD}${unit} L x ${hD}${unit} H - Base: ${bD}${unit}`;
+  if (item.customId) line += ` | ${item.customId}`;
+  return line;
+}
+document.getElementById('list-export-btn').addEventListener('click', () => {
+  if (!items.length) { setStatus('No items to export.'); return; }
+  const sorted = [...items].sort((a, b) =>
+    getItemName(a).localeCompare(getItemName(b), undefined, { numeric: true, sensitivity: 'base' }));
+  const text = sorted.map(exportLineFor).join('\n') + '\n';
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'item_list.txt'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
+  setStatus('Item list exported.');
+});
+
 // ════════════════════════════════════════════════════
 // Drag a planned item out of the list to commit it into the room
 // ════════════════════════════════════════════════════
@@ -2012,6 +2161,7 @@ function renderItemList() {
     div.className = 'list-entry' +
                     (item.id === selectedId ? ' selected' : '') +
                     (isPlanned ? ' planned' : '');
+    div.dataset.itemId = item.id;
     const dot  = document.createElement('div');
     dot.className = 'list-color-dot'; dot.style.background = item.color;
     const span = document.createElement('span');
@@ -2019,11 +2169,18 @@ function renderItemList() {
     div.appendChild(dot); div.appendChild(span);
 
     if (!isPlanned) {
-      // Normal items: click to select and scroll to in canvas
+      // Normal items: click to select and scroll to in canvas, double-click/double-tap to edit.
+      // Deliberately NOT calling selectItem() here — that rebuilds the whole list (innerHTML
+      // wipe), which replaces this very div with a fresh one between the two clicks of a
+      // double-click and silently kills native dblclick detection on desktop. Updating the
+      // highlight in place instead keeps this exact DOM node alive for the second click.
       div.addEventListener('click', () => {
-        selectItem(item.id);
+        selectedId = item.id;
+        renderAllItems();
+        updateListSelectionHighlight();
         document.getElementById('item-' + item.id)?.scrollIntoView({ behavior:'smooth', block:'nearest' });
       });
+      div.addEventListener('dblclick', () => openNameDialog(item.id));
     } else {
       // Planned items: drag out of the list and drop in the room to commit
       wirePlannedRowDrag(div, item);
@@ -2031,6 +2188,16 @@ function renderItemList() {
 
     itemListEl.appendChild(div);
   });
+}
+
+// Lightweight alternative to a full renderItemList() rebuild — used when only the
+// selection changed, so existing row DOM nodes (and their listeners) stay intact.
+function updateListSelectionHighlight() {
+  itemListEl.querySelectorAll('.list-entry.selected').forEach(el => el.classList.remove('selected'));
+  if (selectedId) {
+    const el = itemListEl.querySelector(`.list-entry[data-item-id="${selectedId}"]`);
+    if (el) el.classList.add('selected');
+  }
 }
 
 function selectItem(id) { selectedId = id; renderAllItems(); renderItemList(); }
@@ -2152,6 +2319,8 @@ function loadState(state) {
       baseHeight_in: safeNum(it.baseHeight_in,  0, 1e6,   0),
       // name: textContent-only, safe as-is but truncate to avoid absurd lengths
       name:          (typeof it.name === 'string' ? it.name : '').slice(0, 200),
+      // customId: same treatment as name, shorter cap
+      customId:      (typeof it.customId === 'string' ? it.customId : '').slice(0, 60),
       // color: only accept valid hsl() strings we generate, fallback to random
       color:         (typeof it.color === 'string' && /^hsl\(\d+,\d+%,\d+%\)$/.test(it.color))
                        ? it.color : randColor(),
@@ -2286,6 +2455,793 @@ tryRecoverSnapshot();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker registration failed:', err));
 }
+</script>
+<script>
+/* ═══════════ 3D adapter: CSS 3D transforms ═══════════
+   No library. World units are px (1 ft = 96 px = F, same scale as the 2D
+   canvas, so item x_px/y_px map through directly). CSS coords: x right,
+   y DOWN, z toward viewer — so world "up" is −y and camera cssY = +cam.y·F.
+   View transform (derived from the CSS rotation matrices, verified against
+   the straight-down/north-up case):
+     translateZ(P) rotateX(pitch) rotateY(yaw) translate3d(−cx, +cyCss, −cz)
+   with pitch positive = look up, yaw positive = turn right.
+
+   CSS 3D transforms have no near-plane clipping: a flat transformed element
+   produces divide-by-zero/negative-w screen coordinates once part of its
+   extent crosses the camera's depth-zero plane (documented behavior — see
+   e.g. Mozilla bug 766345's handling of "quads that cross the w=0 plane").
+   That crossing is fundamentally a proximity condition — a far corner of a
+   large plane can only reach it by rotating enough that the offset (roughly
+   distance × tan(angle)) still lands within the plane's own finite extent,
+   which close range makes trivial and long range makes require an
+   impractically extreme angle. Rather than keeping the camera away from
+   every wall/floor plane at once (which constrained movement), each small
+   floor/wall TILE fades its own opacity based on the camera's plain 3D
+   distance to it (updateDangerVisibility, via distToBox) — full strength
+   past OUTER_DIST_FT, gone by INNER_DIST_FT, independent of which way the
+   camera is facing, so it reliably covers rotating into danger without
+   caring what "danger" would look like at every possible angle. Movement
+   stays completely free; only the small patch of geometry the camera is
+   effectively standing inside of fades out, briefly, right where it would
+   otherwise render corrupted — a gradient instead of a pop, and each patch
+   is a small fraction of a tile's size rather than a whole tile.
+
+   Firefox in particular has separately documented trouble with rendering
+   order once a page has many simultaneously 3D-transformed elements on
+   screen at once (its layer/plane-sorting fell back to unreliable
+   heuristics past a few hundred, historically — see Mozilla bug 904304).
+   Tile size is chosen from a fixed budget on TOTAL tile count across the
+   whole room (TILE_BUDGET) rather than a fixed per-tile size, so a small
+   room gets fine, barely-noticeable tiles while a large room automatically
+   uses coarser tiles to stay off that cliff rather than accumulating
+   thousands of tiny ones. Backing planes (behind all 5 surfaces, masking
+   tile seams) are tiled and fade the same way as the main surfaces —
+   at full size they're exactly the kind of large untiled plane this whole
+   mechanism exists to avoid. */
+const ad3d = (() => {
+  let vp = null, world = null, vg = null, normalP = 800;
+  const F = PX_PER_FOOT;
+  const BASE_TILE_FT = 2.5;   // tile size for rooms small enough not to hit the budget below
+  const TILE_BUDGET = 60;     // total tiles across the 5 main surfaces (backing roughly doubles
+                               // this — tightened from 100 to compensate, keeping the combined
+                               // total in the same ~130-170 range as when only 2 surfaces had
+                               // backing planes)
+  const OUTER_DIST_FT = 2.0;  // full opacity at/beyond this distance
+  const INNER_DIST_FT = 0.8;  // zero opacity at/within this distance
+  let dangerTiles = []; // [{el, bbox:{min:[x,y,z]ft, max:[x,y,z]ft}, opacity}]
+
+  let itemFaceMap = new Map(); // face element -> item, for pickItem() hit-testing
+
+  function addFace(w, h, transform, bg, border, noPointer) {
+    const el = document.createElement('div');
+    el.className = 'f3d';
+    el.style.width = w + 'px'; el.style.height = h + 'px';
+    el.style.transform = transform;
+    el.style.background = bg;
+    if (border) el.style.border = '2px solid ' + border;
+    if (noPointer) el.style.pointerEvents = 'none';
+    world.appendChild(el);
+    return el;
+  }
+  function addCanvasFace(cnv, w, h, transform) {
+    cnv.className = 'f3d';
+    cnv.style.width = w + 'px'; cnv.style.height = h + 'px';
+    cnv.style.transform = transform;
+    cnv.style.pointerEvents = 'none'; // only ever wall/floor tiles — never a pick target
+    world.appendChild(cnv);
+    return cnv;
+  }
+
+  // Splits a fullW×fullH (ft) surface into tiles no larger than maxTile
+  // (ft), using an even count per axis so no ragged sliver tile is left.
+  function tileRects(fullW, fullH, maxTile) {
+    const nx = Math.max(1, Math.ceil(fullW / maxTile)), ny = Math.max(1, Math.ceil(fullH / maxTile));
+    const tw = fullW / nx, th = fullH / ny;
+    const rects = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) rects.push({ x: i * tw, y: j * th, w: tw, h: th });
+    return rects;
+  }
+
+  // Same vignetted-grid look as the 2D room / other adapters, but drawn as
+  // just one tile's worth of a larger fullW×fullH surface. Grid lines are
+  // computed at WORLD-aligned positions, not from this tile's or even this
+  // surface's own local origin: south and west are placed via a rotation
+  // that mirrors their local x-axis relative to the floor/opposite wall
+  // that shares that world axis (flipGridX), so drawing from local x=0
+  // would offset their grid by the room's fractional-foot remainder
+  // whenever a dimension isn't a whole number. The vignette gradient is
+  // unaffected — it's centered and symmetric, so mirroring doesn't move it.
+  function drawTileCanvas(fullW, fullH, metric, tx, ty, s, pxW, pxH, flipGridX) {
+    const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
+    const ctx = c.getContext('2d');
+    const ox = tx * s, oy = ty * s;
+    ctx.translate(-ox, -oy);
+    ctx.fillStyle = '#3a3a3a'; ctx.fillRect(ox, oy, pxW, pxH);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = Math.max(1, 2 * s / 96);
+    const step = metric ? s / M_PER_FT : s;
+    const fullWpx = fullW * s, fullHpx = fullH * s;
+
+    let offX = step;
+    if (flipGridX) { offX = fullWpx % step; if (offX < 1) offX += step; }
+    let xs = offX;
+    if (ox > offX) xs = offX + Math.ceil((ox - offX) / step) * step;
+
+    ctx.beginPath();
+    for (let x = xs; x < fullWpx - 1 && x <= ox + pxW + 0.5; x += step) {
+      ctx.moveTo(x, oy); ctx.lineTo(x, oy + pxH);
+    }
+    for (let y = Math.max(step, Math.ceil(oy / step) * step); y < fullHpx - 1 && y <= oy + pxH + 0.5; y += step) {
+      ctx.moveTo(ox, y); ctx.lineTo(ox + pxW, y);
+    }
+    ctx.stroke();
+    const grad = ctx.createRadialGradient(fullWpx / 2, fullHpx / 2, 0, fullWpx / 2, fullHpx / 2, 0.7 * Math.max(fullWpx, fullHpx));
+    grad.addColorStop(0, 'rgba(85,85,85,0)');
+    grad.addColorStop(1, 'rgba(17,17,17,0.7)');
+    ctx.fillStyle = grad; ctx.fillRect(ox, oy, pxW, pxH);
+    return c;
+  }
+
+  function bboxFromCorners(corners) {
+    const xs = corners.map(p => p[0]), ys = corners.map(p => p[1]), zs = corners.map(p => p[2]);
+    return { min: [Math.min(...xs), Math.min(...ys), Math.min(...zs)], max: [Math.max(...xs), Math.max(...ys), Math.max(...zs)] };
+  }
+
+  function addTiledSurface(fullWFt, fullHFt, baseTransform, maxTile, metric, flipGridX, cornerFn) {
+    // `s` is the TEXTURE resolution only (px per ft baked into the canvas,
+    // reduced for very large surfaces purely to bound memory) — it must
+    // never be used for the tile's CSS size or position. Those always use
+    // the fixed F=96px/ft world scale that the camera, items, and every
+    // other placement in the scene use; using `s` there was the bug behind
+    // the culling reported at room dimensions over 2048/96≈21.33ft — below
+    // that, `s` and F coincide (s is capped at 96), which is exactly why it
+    // wasn't visible until a room crossed that size.
+    const s = Math.min(96, 2048 / Math.max(fullWFt, fullHFt));
+    for (const t of tileRects(fullWFt, fullHFt, maxTile)) {
+      const pxW = Math.max(1, Math.round(t.w * s)), pxH = Math.max(1, Math.round(t.h * s));
+      const cnv = drawTileCanvas(fullWFt, fullHFt, metric, t.x, t.y, s, pxW, pxH, flipGridX);
+      const el = addCanvasFace(cnv, t.w * F, t.h * F, baseTransform + ' translate3d(' + (t.x * F) + 'px,' + (t.y * F) + 'px,0px)');
+      dangerTiles.push({ el, bbox: bboxFromCorners(cornerFn(t)), opacity: 1 });
+    }
+  }
+
+  // Same tiling, no canvas/texture — for the flat-color backing planes,
+  // which need no grid or vignette but are just as susceptible to the
+  // near-plane crossing at full size as any other large flat surface.
+  function addTiledBacking(fullWFt, fullHFt, baseTransform, maxTile, color, cornerFn) {
+    for (const t of tileRects(fullWFt, fullHFt, maxTile)) {
+      const el = addFace(t.w * F, t.h * F, baseTransform + ' translate3d(' + (t.x * F) + 'px,' + (t.y * F) + 'px,0px)', color, null, true);
+      dangerTiles.push({ el, bbox: bboxFromCorners(cornerFn(t)), opacity: 1 });
+    }
+  }
+
+  function init(container) {
+    vp = document.createElement('div'); vp.id = 'css3d-vp';
+    world = document.createElement('div'); world.id = 'css3d-world';
+    vp.appendChild(world);
+    vg = document.createElement('div'); vg.id = 'css3d-vignette'; // fog stand-in
+    container.insertBefore(vg, container.firstChild);
+    container.insertBefore(vp, container.firstChild);
+    ad.el = vp;
+    resize();
+  }
+
+  function build() {
+    world.innerHTML = ''; dangerTiles = []; itemFaceMap.clear();
+    const W = room.w, L = room.l, Hh = room.h;
+    const Wp = W * F, Lp = L * F, Hp = Hh * F;
+    // Total tile count (floor+4 walls) is kept near TILE_BUDGET regardless
+    // of room size: small rooms use tiles as fine as BASE_TILE_FT, large
+    // rooms automatically coarsen so element count doesn't keep climbing.
+    const totalArea = W * L + 2 * Hh * (W + L); // ft², floor + 4 walls
+    const maxTile = Math.max(BASE_TILE_FT, Math.sqrt(totalArea / TILE_BUDGET));
+
+    // World-space corners of each tile — reduced to a bounding box and used
+    // only for the per-frame proximity check, not for placement (the
+    // transform strings above already place the tiles correctly). Derived
+    // from each wall's own placement formula: north/east are a direct
+    // local→world mapping, south/west are mirrored by their rotation (same
+    // pair flagged via flipGridX above).
+    const floorCorners = t => [[t.x, 0, t.y], [t.x + t.w, 0, t.y], [t.x, 0, t.y + t.h], [t.x + t.w, 0, t.y + t.h]];
+    const northCorners = t => [[t.x, Hh - t.y, 0], [t.x + t.w, Hh - t.y, 0], [t.x, Hh - t.y - t.h, 0], [t.x + t.w, Hh - t.y - t.h, 0]];
+    const southCorners = t => [[W - t.x, Hh - t.y, L], [W - t.x - t.w, Hh - t.y, L], [W - t.x, Hh - t.y - t.h, L], [W - t.x - t.w, Hh - t.y - t.h, L]];
+    const eastCorners  = t => [[W, Hh - t.y, t.x], [W, Hh - t.y, t.x + t.w], [W, Hh - t.y - t.h, t.x], [W, Hh - t.y - t.h, t.x + t.w]];
+    const westCorners  = t => [[0, Hh - t.y, L - t.x], [0, Hh - t.y, L - t.x - t.w], [0, Hh - t.y - t.h, L - t.x], [0, Hh - t.y - t.h, L - t.x - t.w]];
+
+    addTiledSurface(W, L, 'rotateX(90deg)', maxTile, metricMode, false, floorCorners);
+    addTiledSurface(W, Hh, 'translate3d(0px,' + (-Hp) + 'px,0px)', maxTile, metricMode, false, northCorners);
+    addTiledSurface(W, Hh, 'translate3d(' + Wp + 'px,' + (-Hp) + 'px,' + Lp + 'px) rotateY(180deg)', maxTile, metricMode, true, southCorners);
+    addTiledSurface(L, Hh, 'translate3d(' + Wp + 'px,' + (-Hp) + 'px,0px) rotateY(-90deg)', maxTile, metricMode, false, eastCorners);
+    addTiledSurface(L, Hh, 'translate3d(0px,' + (-Hp) + 'px,' + Lp + 'px) rotateY(90deg)', maxTile, metricMode, true, westCorners);
+
+    // Flat backing planes just outside each of the 5 surfaces, matching the
+    // grid's base fill color — masks the hairline seams between adjacent
+    // tiles (visible even with exact, unrounded CSS placement) with the
+    // surface's own color instead of the void behind it. Each backing
+    // plane uses the EXACT SAME rotation as its real surface (only the
+    // translate differs, pushed a few hundredths of a foot further out) —
+    // rotation, not position, is what determines which side faces which
+    // way, so matching it exactly guarantees the backing plane is visible
+    // from inside (where it's needed) and hidden from outside (behind the
+    // real surface) under precisely the same conditions the real surface
+    // itself is. (The previous south backing omitted the rotation entirely,
+    // so it faced the opposite way from the wall it was meant to back —
+    // invisible from inside where it needed to mask seams, and visible
+    // from outside where it shouldn't have rendered at all.) Tiled and
+    // danger-tracked the same as the main surfaces, reusing each one's own
+    // corner formula (the tiny offset doesn't matter for that check).
+    addTiledBacking(W, L, 'translate3d(0px,8px,0px) rotateX(90deg)', maxTile, '#3a3a3a', floorCorners);
+    addTiledBacking(W, Hh, 'translate3d(0px,' + (-Hp) + 'px,-8px)', maxTile, '#3a3a3a', northCorners);
+    addTiledBacking(W, Hh, 'translate3d(' + Wp + 'px,' + (-Hp) + 'px,' + (Lp + 8) + 'px) rotateY(180deg)', maxTile, '#3a3a3a', southCorners);
+    addTiledBacking(L, Hh, 'translate3d(' + (Wp + 8) + 'px,' + (-Hp) + 'px,0px) rotateY(-90deg)', maxTile, '#3a3a3a', eastCorners);
+    addTiledBacking(L, Hh, 'translate3d(-8px,' + (-Hp) + 'px,' + Lp + 'px) rotateY(90deg)', maxTile, '#3a3a3a', westCorners);
+
+    // Items: 6 faces each, small enough to never approach the near-plane
+    // crossing — no tiling or danger-checking needed here (borders give the
+    // darker edge color; border-box sizing app-wide keeps face dims exact).
+    // Each face is registered in itemFaceMap so pickItem() (used for the
+    // hover/tap tooltip) can trace a DOM hit-test straight back to the item.
+    for (const it of items) {
+      if (it.planned) continue;
+      const w = inchesToPx(it.w_in), l = inchesToPx(it.l_in), hh = inchesToPx(it.h_in);
+      const x = it.x_px, z = it.y_px, bb = inchesToPx(it.baseHeight_in);
+      const top = -(bb + hh);
+      const sh = itemShades(it.color);
+      const faces = [
+        addFace(w, l, 'translate3d(' + x + 'px,' + top + 'px,' + z + 'px) rotateX(90deg)', sh.top, sh.edge),              // top
+        addFace(w, l, 'translate3d(' + x + 'px,' + (-bb) + 'px,' + (z + l) + 'px) rotateX(-90deg)', sh.bottom, sh.edge),  // bottom
+        addFace(w, hh, 'translate3d(' + (x + w) + 'px,' + top + 'px,' + z + 'px) rotateY(180deg)', sh.ns, sh.edge),       // north
+        addFace(w, hh, 'translate3d(' + x + 'px,' + top + 'px,' + (z + l) + 'px)', sh.ns, sh.edge),                       // south
+        addFace(l, hh, 'translate3d(' + (x + w) + 'px,' + top + 'px,' + (z + l) + 'px) rotateY(90deg)', sh.ew, sh.edge),  // east
+        addFace(l, hh, 'translate3d(' + x + 'px,' + top + 'px,' + z + 'px) rotateY(-90deg)', sh.ew, sh.edge),             // west
+      ];
+      faces.forEach(f => itemFaceMap.set(f, it));
+    }
+  }
+
+  // Traces a screen point to the item (if any) visually rendered there,
+  // using the browser's own hit-testing rather than manual raycasting —
+  // items are real, individually-transformed DOM elements, so this is
+  // exact (correctly respects z-ordering, backface culling, and occlusion
+  // by anything actually in front) rather than an approximation. Room
+  // structure (walls/floor/backing) is pointer-events:none specifically so
+  // this always resolves straight to an item or nothing.
+  function pickItem(clientX, clientY) {
+    const el = document.elementFromPoint(clientX, clientY);
+    return el ? (itemFaceMap.get(el) || null) : null;
+  }
+
+  // Point-to-AABB distance in feet (0 if the camera is inside/on the box).
+  function distToBox(c, b) {
+    const dx = Math.max(b.min[0] - c.x, 0, c.x - b.max[0]);
+    const dy = Math.max(b.min[1] - c.y, 0, c.y - b.max[1]);
+    const dz = Math.max(b.min[2] - c.z, 0, c.z - b.max[2]);
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  function updateDangerVisibility(c) {
+    const range = OUTER_DIST_FT - INNER_DIST_FT;
+    for (const dt of dangerTiles) {
+      const d = distToBox(c, dt.bbox);
+      const t = Math.max(0, Math.min(1, (d - INNER_DIST_FT) / range));
+      if (t !== dt.opacity) {
+        dt.el.style.opacity = t;
+        dt.opacity = t;
+      }
+    }
+  }
+
+  function overhead() {
+    const vw = Math.max(1, vp.clientWidth), vh = Math.max(1, vp.clientHeight);
+    const y = Math.max(room.l * normalP / vh, room.w * normalP / vw) * 1.06;
+    return { y: Math.max(y, room.h + 2) };
+  }
+
+  function render(c) {
+    const pd = c.pitch * 180 / Math.PI, yd = c.yaw * 180 / Math.PI;
+    world.style.transform =
+      'translateZ(' + normalP + 'px) rotateX(' + pd + 'deg) rotateY(' + yd + 'deg) ' +
+      'translate3d(' + (-c.x * F) + 'px,' + (c.y * F) + 'px,' + (-c.z * F) + 'px)';
+    updateDangerVisibility(c);
+  }
+
+  function resize() {
+    if (!vp) return;
+    normalP = Math.round(Math.max(300, vp.clientHeight * 0.75)); // ≈ 67° vertical FOV
+    vp.style.perspective = normalP + 'px';
+  }
+
+  function dispose() {
+    if (vp) vp.remove();
+    if (vg) vg.remove();
+    vp = world = vg = null;
+    dangerTiles = [];
+    itemFaceMap.clear();
+    ad.el = null;
+  }
+
+  const ad = { el: null, init, build, overhead, render, resize, dispose, pickItem };
+  return ad;
+})();
+
+/* ═══════════ 3D VIEW — shared core ═══════════
+   World convention (shared by all adapters):
+     x = east (2D x), z = south (2D y), y = UP, units = feet.
+     yaw: positive = turn right, 0 = facing North (−z).
+     pitch: positive = look up, 0 = level, −π/2 = straight down. */
+
+const threeDBtn = document.getElementById('threeD-btn');
+let mode3d = false;      // true once the entry animation has fully finished
+let busy3d = false;      // true during enter/exit transitions
+let overlay3d = null, btn2d = null, joyWrap = null, rafId3d = null;
+let prev2dState = null;
+let pointerLocked3d = false, lastFrameT3d = 0;
+const cam3d = { x: 0, y: 6, z: 0, yaw: 0, pitch: 0, zoom: 48 };
+const keys3d = { f: 0, b: 0, l: 0, r: 0, up: 0, dn: 0, boost: 0 };
+
+const MOVE_SPEED_3D = 9;         // ft/s, keyboard
+const TOUCH_SPEED_3D = 6;        // ft/s, touch joystick at full deflection
+const BOOST_MULT_3D = 2;         // Shift speed multiplier, desktop only
+const MOUSE_SENS_3D = 0.0022;    // rad per px, pointer-locked mouse
+const TOUCH_ROT_SENS_3D = 0.006; // rad per px, one-finger drag
+const TOUCH_PAN_SENS_3D = 0.03;  // ft per px, two-finger drag
+const PITCH_LIMIT_3D = 1.55;     // ≈ 88.8°
+const JOY_RADIUS_3D = 30;        // px, max knob travel from base center
+const JOY_DEADZONE_3D = 0.12;    // fraction of full deflection
+const TAP_MOVE_TOLERANCE_3D = 10; // px, single-finger movement still counted as a tap (not a look-drag)
+const TAP_MAX_MS_3D = 500;        // ms, single-finger touch duration still counted as a tap
+
+function easeInOutSine3d(u) { return -(Math.cos(Math.PI * u) - 1) / 2; }
+function easeInCubic3d(u) { return u * u * u; }
+function easeOutCubic3d(u) { const v = 1 - u; return 1 - v * v * v; }
+
+/* Generic keyframe player. keys = sorted [{t:0..1, ...channels}] — the FIRST
+   key must carry every channel used. Per-segment easing, easeInOutSine3d by
+   default; pass `easings: {channelName: fn}` to give specific channels their
+   own curve (e.g. pitch lagging behind height — see startDescent3d). */
+function playKeys3d(keys, durMs, applyFn, doneFn, easings) {
+  const t0 = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / durMs);
+    let i = 0;
+    while (i < keys.length - 1 && p > keys[i + 1].t) i++;
+    const a = keys[i], b = keys[Math.min(i + 1, keys.length - 1)];
+    const span = (b.t - a.t) || 1;
+    const rawU = Math.min(1, Math.max(0, (p - a.t) / span));
+    const out = {};
+    for (const k in a) {
+      if (k === 't') continue;
+      const ease = (easings && easings[k]) ? easings[k] : easeInOutSine3d;
+      const u = ease(rawU);
+      const bv = (b[k] !== undefined) ? b[k] : a[k];
+      out[k] = a[k] + (bv - a[k]) * u;
+    }
+    applyFn(out, p);
+    if (p < 1) rafId3d = requestAnimationFrame(step);
+    else { rafId3d = null; if (doneFn) doneFn(); }
+  }
+  rafId3d = requestAnimationFrame(step);
+}
+
+/* Same vignetted-grid style as the 2D room, rendered to a canvas. Used by
+   Three.js (as a texture) — not currently rebuilt/shipped, kept for when
+   that variant is revisited. CSS3D tiles its own surfaces (see
+   adapter-css3d.js) and does not use this. */
+function drawSurfaceCanvas(wFt, hFt, metric) {
+  const s = Math.min(96, 2048 / Math.max(wFt, hFt)); // px per ft, capped
+  const w = Math.max(2, Math.round(wFt * s)), h = Math.max(2, Math.round(hFt * s));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = Math.max(1, 2 * s / 96);
+  const step = metric ? s / M_PER_FT : s;   // 1 m or 1 ft grid
+  ctx.beginPath();
+  for (let x = step; x < w - 1; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+  for (let y = step; y < h - 1; y += step) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+  ctx.stroke();
+  const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, 0.7 * Math.max(w, h));
+  grad.addColorStop(0, 'rgba(85,85,85,0)');
+  grad.addColorStop(1, 'rgba(17,17,17,0.7)');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+  return c;
+}
+
+/* Per-face shades derived from the item's flat hsl color — top lightest,
+   N/S mid, E/W darker, bottom darkest; 'edge' for borders/edge lines. */
+function itemShades(color) {
+  const m = /^hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)$/.exec(color || '');
+  const H = m ? +m[1] : 0, S = m ? +m[2] : 55, L = m ? +m[3] : 42;
+  const hsl = l => 'hsl(' + H + ',' + S + '%,' + Math.max(4, Math.min(92, Math.round(l))) + '%)';
+  return { top: hsl(L * 1.22), ns: hsl(L), ew: hsl(L * 0.8), bottom: hsl(L * 0.55), edge: hsl(L * 0.45) };
+}
+
+function normYaw3d(y) {
+  y = y % (2 * Math.PI);
+  if (y > Math.PI) y -= 2 * Math.PI;
+  if (y < -Math.PI) y += 2 * Math.PI;
+  return y;
+}
+
+/* Free-roam room boundary — generous, not wall-hugging: the camera can
+   leave the room through any wall by design. Rendering correctness near
+   walls is the adapter's job (see adapter-css3d.js's per-tile visibility
+   check), not something enforced by keeping the camera away from them. */
+function clampCamPosition3d(cam) {
+  cam.x = Math.max(-60, Math.min(room.w + 60, cam.x));
+  cam.z = Math.max(-60, Math.min(room.l + 60, cam.z));
+  cam.y = Math.max(0.5, Math.min(300, cam.y));
+}
+
+/* ── overlay DOM ── */
+function buildOverlay3D() {
+  overlay3d = document.createElement('div');
+  overlay3d.id = 'threeD-overlay';
+  btn2d = document.createElement('button');
+  btn2d.id = 'btn-2d'; btn2d.title = 'Back to 2D view';
+  btn2d.innerHTML = '<svg viewBox="0 0 128 128" width="22" height="22" aria-hidden="true"><rect width="78.441299" height="78.441299" x="24.779352" y="24.779352" fill="#FFFFFF" fill-opacity="0.35"/><rect width="65.012489" height="65.012489" x="31.493755" y="31.493755" fill="#FFFFFF" fill-opacity="1"/></svg>';
+  btn2d.addEventListener('click', e => { e.stopPropagation(); exit3D(); });
+  overlay3d.appendChild(btn2d);
+  if (isTouch()) {
+    joyWrap = document.createElement('div');
+    joyWrap.id = 'joystick-3d';
+    const base = document.createElement('div'); base.id = 'joystick-base';
+    const knob = document.createElement('div'); knob.id = 'joystick-knob';
+    base.appendChild(knob); joyWrap.appendChild(base);
+    joyWrap.style.display = 'none';
+    overlay3d.appendChild(joyWrap);
+    wireJoystick3d(base, knob);
+  }
+  document.body.appendChild(overlay3d);
+}
+
+/* ── virtual joystick (touch movement) ──
+   Drag anywhere on the base; the knob follows, clamped to JOY_RADIUS_3D, and
+   the drag keeps tracking even once the finger slides outside the base's
+   visual bounds (tracked by touch identifier, not by hit-testing). The same
+   identifier is used to exclude this touch from the look/pan recognizer
+   below, so holding the joystick with one thumb and dragging elsewhere to
+   look works at the same time. */
+const joy3d = { active: false, touchId: null, x: 0, y: 0 };
+function wireJoystick3d(base, knob) {
+  function updateFromTouch(t) {
+    const r = base.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let dx = t.clientX - cx, dy = t.clientY - cy;
+    const mag = Math.hypot(dx, dy);
+    if (mag > JOY_RADIUS_3D) { dx = dx / mag * JOY_RADIUS_3D; dy = dy / mag * JOY_RADIUS_3D; }
+    knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    joy3d.x = dx / JOY_RADIUS_3D; joy3d.y = dy / JOY_RADIUS_3D;
+  }
+  function findTouch(e) {
+    for (const t of e.changedTouches) if (t.identifier === joy3d.touchId) return t;
+    return null;
+  }
+  function onMove(e) { const t = findTouch(e); if (!t) return; e.preventDefault(); updateFromTouch(t); }
+  function onEnd(e) {
+    const t = findTouch(e); if (!t) return;
+    joy3d.active = false; joy3d.touchId = null; joy3d.x = 0; joy3d.y = 0;
+    knob.classList.remove('dragging');
+    knob.style.transform = 'translate(0px,0px)';
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onEnd);
+    document.removeEventListener('touchcancel', onEnd);
+  }
+  base.addEventListener('touchstart', e => {
+    if (joy3d.active) return;
+    e.preventDefault(); e.stopPropagation();
+    const t = e.changedTouches[0];
+    joy3d.active = true; joy3d.touchId = t.identifier;
+    knob.classList.add('dragging');
+    updateFromTouch(t);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd, { passive: false });
+    document.addEventListener('touchcancel', onEnd, { passive: false });
+  }, { passive: false });
+}
+function otherTouches3d(touchList) {
+  return Array.from(touchList).filter(t => !(joy3d.active && t.identifier === joy3d.touchId));
+}
+
+/* ── enter ── */
+function enter3D() {
+  if (busy3d || mode3d) return;
+  busy3d = true;
+  closeAnyDrawer(); hideTooltip();
+  prev2dState = { fit: fitMode, sl: canvasWrap.scrollLeft, st: canvasWrap.scrollTop };
+  document.body.classList.add('mode-3d');              // menus slide away
+  setTimeout(() => {
+    document.body.classList.add('mode-3d-collapsed');  // bars leave layout
+    if (!fitMode) toggleFit(); else applyFit();        // room alone, fit to screen
+    buildOverlay3D();
+    ad3d.init(overlay3d);
+    ad3d.build();
+    const over = ad3d.overhead();
+    cam3d.x = room.w / 2; cam3d.z = room.l / 2; cam3d.yaw = 0;
+    cam3d.y = over.y; cam3d.pitch = -Math.PI / 2;
+    if (over.zoom !== undefined) cam3d.zoom = over.zoom;
+    ad3d.render(cam3d);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      overlay3d.classList.add('visible');   // fade the 3D layer in
+      setTimeout(startDescent3d, 320);
+    }));
+  }, 370);
+}
+
+function startDescent3d() {
+  const wz = (ad3d.walkZoom !== undefined) ? ad3d.walkZoom : cam3d.zoom;
+  const kf = [
+    { t: 0, y: cam3d.y, pitch: -Math.PI / 2, zoom: cam3d.zoom },
+    { t: 1, y: 6,       pitch: 0,            zoom: wz }
+  ];
+  // Pitch eases IN — it stays close to straight-down through the early part
+  // of the descent and only rotates to level near the end — rather than
+  // sharing height's symmetric ease on the same time fraction. An equal
+  // fraction of pitch's full swing is far more visually obvious early on
+  // than the equivalent fraction of a very tall starting height, so a
+  // matched fraction still read as "leveling off before the descent
+  // finishes" even though the two were mathematically in sync.
+  playKeys3d(kf, 2230, v => {
+    cam3d.y = v.y; cam3d.pitch = v.pitch; cam3d.zoom = v.zoom;
+    ad3d.render(cam3d);
+  }, () => {
+    mode3d = true; busy3d = false;
+    bindControls3d();
+    if (btn2d) btn2d.classList.add('show');
+    if (joyWrap) joyWrap.style.display = 'block';
+    lastFrameT3d = performance.now();
+    rafId3d = requestAnimationFrame(loop3d);
+  }, { pitch: easeInCubic3d });
+}
+
+/* ── exit ── */
+function exit3D() {
+  if (busy3d || !mode3d) return;
+  busy3d = true; mode3d = false;
+  unbindControls3d();
+  if (document.pointerLockElement) document.exitPointerLock();
+  if (btn2d) btn2d.classList.remove('show');
+  if (joyWrap) joyWrap.style.display = 'none';
+  if (rafId3d) { cancelAnimationFrame(rafId3d); rafId3d = null; }
+  const over = ad3d.overhead();
+  const oz = (over.zoom !== undefined) ? over.zoom : cam3d.zoom;
+  overlay3d.style.transition = 'none';                 // manual fade during ascent
+  const kf = [
+    { t: 0, x: cam3d.x,    y: cam3d.y, z: cam3d.z,    yaw: normYaw3d(cam3d.yaw), pitch: cam3d.pitch, zoom: cam3d.zoom },
+    { t: 1, x: room.w / 2, y: over.y,  z: room.l / 2, yaw: 0,                    pitch: -Math.PI / 2, zoom: oz }
+  ];
+  // Mirrors the descent: pitch/yaw ease OUT (snap back toward overhead
+  // early, settle for the rest of the climb) instead of sharing position's
+  // symmetric ease.
+  playKeys3d(kf, 1920, (v, p) => {
+    cam3d.x = v.x; cam3d.y = v.y; cam3d.z = v.z;
+    cam3d.yaw = v.yaw; cam3d.pitch = v.pitch; cam3d.zoom = v.zoom;
+    ad3d.render(cam3d);
+    if (p > 0.7) overlay3d.style.opacity = String(Math.max(0, 1 - (p - 0.7) / 0.3));
+  }, teardown3D, { pitch: easeOutCubic3d, yaw: easeOutCubic3d });
+}
+
+function teardown3D() {
+  ad3d.dispose();
+  overlay3d.remove(); overlay3d = null; btn2d = null; joyWrap = null;
+  if (prev2dState) {
+    if (!prev2dState.fit && fitMode) toggleFit();
+    else if (prev2dState.fit) applyFit();
+    if (!prev2dState.fit) {
+      canvasWrap.scrollLeft = prev2dState.sl;
+      canvasWrap.scrollTop = prev2dState.st;
+    }
+  }
+  document.body.classList.remove('mode-3d-collapsed'); // bars re-enter layout (still translated)
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.body.classList.remove('mode-3d');         // menus slide back in
+  }));
+  busy3d = false;
+  setStatus('Back to 2D.');
+}
+
+/* ── movement loop ── */
+function loop3d(now) {
+  rafId3d = requestAnimationFrame(loop3d);
+  const dt = Math.min(0.05, (now - lastFrameT3d) / 1000);
+  lastFrameT3d = now;
+  const touchMode = isTouch();
+  const useJoy = touchMode && joy3d.active;
+  let fwd = useJoy ? -joy3d.y : (keys3d.f - keys3d.b);
+  let str = useJoy ? joy3d.x : (keys3d.r - keys3d.l);
+  if (useJoy && Math.hypot(fwd, str) < JOY_DEADZONE_3D) { fwd = 0; str = 0; }
+  const vert = keys3d.up - keys3d.dn;
+  if (fwd || str || vert) {
+    const boost = keys3d.boost ? BOOST_MULT_3D : 1;
+    const sp = (touchMode ? TOUCH_SPEED_3D : MOVE_SPEED_3D) * boost * dt;
+    const sy = Math.sin(cam3d.yaw), cy = Math.cos(cam3d.yaw);
+    const dF = fwd * sp;
+    cam3d.x += sy * dF + cy * str * sp;   // forward = (sin yaw, 0, −cos yaw); right = (cos yaw, 0, sin yaw)
+    cam3d.z += -cy * dF + sy * str * sp;
+    cam3d.y += vert * sp;
+    if (ad3d.dolly) ad3d.dolly(dF, cam3d);
+  }
+  clampCamPosition3d(cam3d);
+  ad3d.render(cam3d);
+}
+
+/* ── controls ── */
+let h3dKeyDown = null, h3dKeyUp = null, h3dClick = null, h3dLockChange = null,
+    h3dMouseMove = null, h3dMouseDown = null, h3dMouseUp = null,
+    h3dTouchStart = null, h3dTouchMove = null, h3dTouchEnd = null, h3dResize = null;
+let dragLook3d = null, clickWasDrag3d = false;
+let touch3d = null, tapCandidate3d = null;
+
+function bindControls3d() {
+  h3dKeyDown = e => {
+    if (!mode3d) return;
+    switch (e.code) {
+      case 'KeyW': keys3d.f = 1; e.preventDefault(); break;
+      case 'KeyS': keys3d.b = 1; e.preventDefault(); break;
+      case 'KeyA': keys3d.l = 1; e.preventDefault(); break;
+      case 'KeyD': keys3d.r = 1; e.preventDefault(); break;
+      case 'Space': keys3d.up = 1; e.preventDefault(); break;
+      case 'KeyC': keys3d.dn = 1; break;
+      case 'ShiftLeft': case 'ShiftRight': keys3d.boost = 1; break;
+    }
+  };
+  h3dKeyUp = e => {
+    switch (e.code) {
+      case 'KeyW': keys3d.f = 0; break;
+      case 'KeyS': keys3d.b = 0; break;
+      case 'KeyA': keys3d.l = 0; break;
+      case 'KeyD': keys3d.r = 0; break;
+      case 'Space': keys3d.up = 0; break;
+      case 'KeyC': keys3d.dn = 0; break;
+      case 'ShiftLeft': case 'ShiftRight': keys3d.boost = 0; break;
+    }
+  };
+  window.addEventListener('keydown', h3dKeyDown);
+  window.addEventListener('keyup', h3dKeyUp);
+
+  if (!isTouch()) {
+    /* click toggles pointer capture; drag-look works as a fallback if the
+       browser denies pointer lock */
+    h3dClick = e => {
+      if (!mode3d) return;
+      if (e.target.closest('#btn-2d')) return;
+      if (clickWasDrag3d) { clickWasDrag3d = false; return; }
+      if (!pointerLocked3d) {
+        const el = ad3d.el || overlay3d;
+        if (el.requestPointerLock) el.requestPointerLock();
+      } else {
+        document.exitPointerLock();
+      }
+    };
+    h3dLockChange = () => {
+      pointerLocked3d = document.pointerLockElement != null;
+      if (pointerLocked3d) hideTooltip();
+    };
+    h3dMouseMove = e => {
+      if (!mode3d) return;
+      if (pointerLocked3d) {
+        cam3d.yaw += e.movementX * MOUSE_SENS_3D;
+        cam3d.pitch = Math.max(-PITCH_LIMIT_3D, Math.min(PITCH_LIMIT_3D, cam3d.pitch - e.movementY * MOUSE_SENS_3D));
+      } else if (dragLook3d) {
+        const dx = e.clientX - dragLook3d.x, dy = e.clientY - dragLook3d.y;
+        dragLook3d.x = e.clientX; dragLook3d.y = e.clientY;
+        dragLook3d.moved += Math.abs(dx) + Math.abs(dy);
+        if (dragLook3d.moved > 4) clickWasDrag3d = true;
+        cam3d.yaw += dx * MOUSE_SENS_3D * 1.4;
+        cam3d.pitch = Math.max(-PITCH_LIMIT_3D, Math.min(PITCH_LIMIT_3D, cam3d.pitch - dy * MOUSE_SENS_3D * 1.4));
+      } else {
+        // Mouse isn't captured for camera control — free to hover items,
+        // same as the 2D view.
+        const item = ad3d.pickItem ? ad3d.pickItem(e.clientX, e.clientY) : null;
+        if (item) showTooltip(item, e.clientX, e.clientY);
+        else hideTooltip();
+      }
+    };
+    h3dMouseDown = e => {
+      if (!mode3d || pointerLocked3d || e.button !== 0) return;
+      if (e.target.closest('#btn-2d')) return;
+      dragLook3d = { x: e.clientX, y: e.clientY, moved: 0 };
+      hideTooltip();
+    };
+    h3dMouseUp = () => { dragLook3d = null; };
+    overlay3d.addEventListener('click', h3dClick);
+    document.addEventListener('pointerlockchange', h3dLockChange);
+    window.addEventListener('mousemove', h3dMouseMove);
+    overlay3d.addEventListener('mousedown', h3dMouseDown);
+    window.addEventListener('mouseup', h3dMouseUp);
+  } else {
+    /* Look/pan gesture recognizer, operating on whichever touches are NOT
+       the joystick's own (see otherTouches3d): one finger looks (swipe
+       direction = look direction); two fingers pan (translate) the camera;
+       a brief, near-stationary single-finger touch (tapCandidate3d) shows
+       an item's tooltip instead, mirroring the 2D view's tap behavior. */
+    h3dTouchStart = e => {
+      if (e.target.closest('#btn-2d')) return;
+      const rest = otherTouches3d(e.touches);
+      if (!rest.length) return;
+      e.preventDefault();
+      if (rest.length === 1) {
+        touch3d = { mode: 'look', x: rest[0].clientX, y: rest[0].clientY };
+        tapCandidate3d = { x: rest[0].clientX, y: rest[0].clientY, time: Date.now() };
+      } else {
+        touch3d = { mode: 'pan',
+          x: (rest[0].clientX + rest[1].clientX) / 2,
+          y: (rest[0].clientY + rest[1].clientY) / 2 };
+        tapCandidate3d = null; // a second finger joining rules out a simple tap
+      }
+    };
+    h3dTouchMove = e => {
+      if (!touch3d) return;
+      const rest = otherTouches3d(e.touches);
+      if (!rest.length) return;
+      e.preventDefault();
+      if (touch3d.mode === 'look' && rest.length === 1) {
+        const dx = rest[0].clientX - touch3d.x, dy = rest[0].clientY - touch3d.y;
+        touch3d.x = rest[0].clientX; touch3d.y = rest[0].clientY;
+        cam3d.yaw += dx * TOUCH_ROT_SENS_3D;
+        cam3d.pitch = Math.max(-PITCH_LIMIT_3D, Math.min(PITCH_LIMIT_3D, cam3d.pitch - dy * TOUCH_ROT_SENS_3D));
+        if (tapCandidate3d && Math.hypot(rest[0].clientX - tapCandidate3d.x, rest[0].clientY - tapCandidate3d.y) > TAP_MOVE_TOLERANCE_3D) {
+          tapCandidate3d = null; // moved too far to still be a tap
+        }
+      } else if (touch3d.mode === 'pan' && rest.length >= 2) {
+        const cx = (rest[0].clientX + rest[1].clientX) / 2;
+        const cyy = (rest[0].clientY + rest[1].clientY) / 2;
+        const dx = cx - touch3d.x, dy = cyy - touch3d.y;
+        touch3d.x = cx; touch3d.y = cyy;
+        const cy = Math.cos(cam3d.yaw), sy = Math.sin(cam3d.yaw);
+        cam3d.x += cy * dx * TOUCH_PAN_SENS_3D;   // right vector = (cos yaw, 0, sin yaw)
+        cam3d.z += sy * dx * TOUCH_PAN_SENS_3D;
+        cam3d.y += -dy * TOUCH_PAN_SENS_3D;      // drag up = camera up
+        clampCamPosition3d(cam3d);
+      }
+    };
+    h3dTouchEnd = e => {
+      if (tapCandidate3d && Date.now() - tapCandidate3d.time < TAP_MAX_MS_3D) {
+        const item = ad3d.pickItem ? ad3d.pickItem(tapCandidate3d.x, tapCandidate3d.y) : null;
+        if (item) {
+          const hideDelay = showTooltip(item, tapCandidate3d.x, tapCandidate3d.y);
+          tooltipTimer = setTimeout(hideTooltip, hideDelay);
+        }
+      }
+      tapCandidate3d = null;
+      const rest = otherTouches3d(e.touches);
+      if (!rest.length) touch3d = null;
+      else if (rest.length === 1) touch3d = { mode: 'look', x: rest[0].clientX, y: rest[0].clientY };
+    };
+    overlay3d.addEventListener('touchstart', h3dTouchStart, { passive: false });
+    overlay3d.addEventListener('touchmove', h3dTouchMove, { passive: false });
+    overlay3d.addEventListener('touchend', h3dTouchEnd, { passive: false });
+    overlay3d.addEventListener('touchcancel', h3dTouchEnd, { passive: false });
+  }
+  h3dResize = () => { if (overlay3d && ad3d.resize) ad3d.resize(); };
+  window.addEventListener('resize', h3dResize);
+}
+
+function unbindControls3d() {
+  window.removeEventListener('keydown', h3dKeyDown);
+  window.removeEventListener('keyup', h3dKeyUp);
+  window.removeEventListener('resize', h3dResize);
+  if (!isTouch()) {
+    if (overlay3d) {
+      overlay3d.removeEventListener('click', h3dClick);
+      overlay3d.removeEventListener('mousedown', h3dMouseDown);
+    }
+    document.removeEventListener('pointerlockchange', h3dLockChange);
+    window.removeEventListener('mousemove', h3dMouseMove);
+    window.removeEventListener('mouseup', h3dMouseUp);
+  } else if (overlay3d) {
+    overlay3d.removeEventListener('touchstart', h3dTouchStart);
+    overlay3d.removeEventListener('touchmove', h3dTouchMove);
+    overlay3d.removeEventListener('touchend', h3dTouchEnd);
+    overlay3d.removeEventListener('touchcancel', h3dTouchEnd);
+  }
+  for (const k in keys3d) keys3d[k] = 0;
+  dragLook3d = null; touch3d = null; tapCandidate3d = null;
+  hideTooltip();
+}
+
+threeDBtn.addEventListener('click', enter3D);
+
 </script>
 </body>
 </html>
