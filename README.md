@@ -8,8 +8,8 @@ network calls at runtime. Works fully offline, installable as a PWA, and
 available as a compiled Android APK. (technically, PWA and APK need internet to get the latest `index.html` from this repo)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ModCritic/AsteroidRawFileEmbeds/main/desktopinvmgr.webp" height="364">
-  <img src="https://raw.githubusercontent.com/ModCritic/AsteroidRawFileEmbeds/main/mobileinvmgr.gif" height="364">
+  <img src="https://raw.githubusercontent.com/ModCritic/AsteroidRawFileEmbeds/main/desktopinvmgr.webp" height="360">
+  <img src="https://raw.githubusercontent.com/ModCritic/AsteroidRawFileEmbeds/main/mobileinvmgr.gif" height="360">
 </p>
 
 ## Features
